@@ -10,14 +10,45 @@ yarn-error.log*
 
 # Python
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+.venv/
 venv/
-env/
-.env
-*.env
-*.sqlite3
+ENV/
+
+# PyTorch and model files
+*.pt
+*.bin
+*.safetensors
+*.pth
+*.h5
+*.hdf5
+*.pkl
+*.t7
+*.dylib
+*.so
+*.dll
+*.pyd
+*.pth.*
 
 # VSCode
 .vscode/
