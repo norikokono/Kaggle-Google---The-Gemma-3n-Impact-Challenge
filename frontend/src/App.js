@@ -1,14 +1,29 @@
 import React, { useState, useRef, useEffect } from 'react';
 import './App.css';
-import { MapContainer, TileLayer, Marker, useMap, useMapEvents } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
+import L from 'leaflet';
+import markerIcon from 'leaflet/dist/images/marker-icon.png';
+import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
+import markerShadow from 'leaflet/dist/images/marker-shadow.png';
 import MarkdownReport from './MarkdownReport';
 import ImageWithPlaceholder from './ImageWithPlaceholder';
+import AudioRecorder from './AudioRecorder';
 
-import L from 'leaflet';
-import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
-import markerIcon from 'leaflet/dist/images/marker-icon.png';
-import markerShadow from 'leaflet/dist/images/marker-shadow.png';
+// Geocode utility (OpenStreetMap Nominatim)
+async function geocodeLocation(locationText) {
+  const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(locationText)}`;
+  try {
+    const res = await fetch(url);
+    const results = await res.json();
+    if (results && results.length > 0) {
+      return [parseFloat(results[0].lat), parseFloat(results[0].lon)];
+    }
+  } catch (error) {
+    console.error('Geocoding error:', error);
+  }
+  return null;
+}
 
 // Fix leaflet's default icon path
 delete L.Icon.Default.prototype._getIconUrl;
@@ -17,45 +32,6 @@ L.Icon.Default.mergeOptions({
   iconUrl: markerIcon,
   shadowUrl: markerShadow,
 });
-
-// AccessibleAnalysis: parses simple markdown to accessible HTML
-function AccessibleAnalysis({ text }) {
-  if (!text) return null;
-  const lines = text.split('\n');
-  const elements = [];
-  let currentList = null;
-  lines.forEach((line, i) => {
-    if (/^##\s+/.test(line)) {
-      if (currentList) { elements.push(<ul key={i+'ul'}>{currentList}</ul>); currentList = null; }
-      elements.push(<h3 key={i+'h3'}>{line.replace(/^##\s+/, '')}</h3>);
-    } else if (/^-\s+/.test(line)) {
-      if (!currentList) currentList = [];
-      currentList.push(<li key={i+'li'}>{line.replace(/^-\s+/, '')}</li>);
-    } else if (/^\*.*\*$/.test(line.trim())) {
-      if (currentList) { elements.push(<ul key={i+'ul'}>{currentList}</ul>); currentList = null; }
-      elements.push(<p key={i+'em'}><em>{line.replace(/^\*|\*$/g, '').trim()}</em></p>);
-    } else if (line.trim() === '---') {
-      if (currentList) { elements.push(<ul key={i+'ul'}>{currentList}</ul>); currentList = null; }
-      elements.push(<hr key={i+'hr'} />);
-    } else if (line.trim() !== '') {
-      if (currentList) { elements.push(<ul key={i+'ul'}>{currentList}</ul>); currentList = null; }
-      elements.push(<p key={i+'p'}>{line}</p>);
-    }
-  });
-  if (currentList) elements.push(<ul key={'endul'}>{currentList}</ul>);
-  return <div style={{whiteSpace: 'pre-line', fontSize: '1rem', color: '#222'}} aria-live="polite">{elements}</div>;
-}
-
-// Geocode utility (OpenStreetMap Nominatim)
-async function geocodeLocation(locationText) {
-  const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(locationText)}`;
-  const res = await fetch(url);
-  const results = await res.json();
-  if (results && results.length > 0) {
-    return [parseFloat(results[0].lat), parseFloat(results[0].lon)];
-  }
-  return null;
-}
 
 function MovableMap({ coords, setCoords }) {
   const mapRef = useRef();
@@ -120,7 +96,12 @@ function App() {
   const [analysis, setAnalysis] = useState(null);
   const [loading, setLoading] = useState(false);
   const [voiceActive, setVoiceActive] = useState(false);
-  const recognitionRef = useRef(null);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [selectedVoice, setSelectedVoice] = useState(null);
+  const [availableVoices, setAvailableVoices] = useState([]);
+  const [isLoadingVoices, setIsLoadingVoices] = useState(true);
+  const [speechSynthesis, setSpeechSynthesis] = useState(null);
+  const currentUtterance = useRef(null);
 
   // Handle text search
   const handleSearch = async () => {
@@ -134,58 +115,103 @@ function App() {
     setSearchText('');
   };
 
-  // Handle voice search
-  const handleVoiceInput = () => {
-    if (!('webkitSpeechRecognition' in window)) {
-      alert('Voice recognition not supported.');
+  // Initialize speech synthesis and load available voices when component mounts
+  useEffect(() => {
+    // Check if speech synthesis is available
+    if (!('speechSynthesis' in window)) {
+      console.error('Speech Synthesis API not supported in this browser');
+      alert('Text-to-speech is not supported in your browser. Please use Chrome, Edge, or Safari.');
       return;
     }
-    const recognition = new window.webkitSpeechRecognition();
-    recognition.lang = 'en-US';
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
-    recognition.onresult = async (event) => {
-      const transcript = event.results[0][0].transcript;
-      const foundCoords = await geocodeLocation(transcript);
-      if (foundCoords) {
-        setCoords(foundCoords);
-      } else {
-        alert('Location not found.');
+
+    const synth = window.speechSynthesis;
+    console.log('SpeechSynthesis initialized:', !!synth);
+    setSpeechSynthesis(synth);
+    
+    const loadVoices = () => {
+      try {
+        const voices = synth.getVoices();
+        console.log('Available voices:', voices);
+        
+        if (voices.length > 0) {
+          const voiceList = [...voices];
+          setAvailableVoices(voiceList);
+          
+          // Set or update selected voice
+          setSelectedVoice(prevSelected => {
+            // Try to find a default voice, or fall back to the first available
+            const defaultVoice = voiceList.find(v => v.default) || voiceList[0];
+            
+            // If we already have a selected voice, try to find it in the new voices list
+            if (prevSelected) {
+              const found = voiceList.find(v => v.voiceURI === prevSelected.voiceURI);
+              if (found) return found;
+            }
+            
+            console.log('Setting default voice:', defaultVoice);
+            return defaultVoice;
+          });
+          
+          setIsLoadingVoices(false);
+          console.log('Voices loaded successfully');
+        } else {
+          console.log('No voices available yet, will retry...');
+          // If no voices are loaded yet, try again after a short delay
+          setTimeout(loadVoices, 500);
+        }
+      } catch (error) {
+        console.error('Error loading voices:', error);
       }
     };
-    recognition.onerror = (event) => {
-      alert('Voice input error: ' + event.error);
-    };
-    recognition.onend = () => setVoiceActive(false);
-    recognition.start();
-    recognitionRef.current = recognition;
-    setVoiceActive(true);
-  };
 
-  // Voice input handler
-  const handleVoiceInput2 = () => {
-    if (!('webkitSpeechRecognition' in window)) {
-      alert('Voice recognition not supported.');
-      return;
-    }
-    if (!voiceActive) {
-      const recognition = new window.webkitSpeechRecognition();
-      recognition.lang = 'en-US';
-      recognition.interimResults = false;
-      recognition.maxAlternatives = 1;
-      recognition.onresult = (event) => {
-        const transcript = event.results[0][0].transcript;
-        fetchAnalysis(transcript);
-      };
-      recognition.onend = () => setVoiceActive(false);
-      recognition.start();
-      recognitionRef.current = recognition;
-      setVoiceActive(true);
+    // Initial load
+    console.log('Initializing speech synthesis...');
+    
+    // Some browsers need a user interaction before voices are available
+    const handleFirstInteraction = () => {
+      console.log('First interaction detected, loading voices...');
+      loadVoices();
+      document.removeEventListener('click', handleFirstInteraction);
+      document.removeEventListener('keydown', handleFirstInteraction);
+    };
+
+    // Try to load voices immediately
+    if (synth.getVoices().length > 0) {
+      loadVoices();
     } else {
-      recognitionRef.current && recognitionRef.current.stop();
-      setVoiceActive(false);
+      // Set up event listeners for first user interaction
+      console.log('Waiting for user interaction to load voices...');
+      document.addEventListener('click', handleFirstInteraction, { once: true });
+      document.addEventListener('keydown', handleFirstInteraction, { once: true });
+      
+      // Also try to load after a delay in case the interaction events don't fire
+      const timeoutId = setTimeout(() => {
+        console.log('Delayed voice load attempt...');
+        loadVoices();
+      }, 2000);
+      
+      return () => {
+        clearTimeout(timeoutId);
+        document.removeEventListener('click', handleFirstInteraction);
+        document.removeEventListener('keydown', handleFirstInteraction);
+      };
     }
-  };
+
+    // Set up voices changed handler
+    if (synth.onvoiceschanged !== undefined) {
+      console.log('Setting up onvoiceschanged handler');
+      synth.onvoiceschanged = loadVoices;
+    }
+
+    // Cleanup
+    return () => {
+      if (synth) {
+        console.log('Cleaning up speech synthesis');
+        synth.cancel();
+        synth.onvoiceschanged = null;
+      }
+    };
+  }, []);
 
   // Fetch AI analysis
   const fetchAnalysis = async (locationText = null) => {
@@ -240,15 +266,13 @@ function App() {
             onKeyDown={e => { if (e.key === 'Enter') handleSearch(); }}
           />
           <button onClick={handleSearch}>Search</button>
-          <button
-            onClick={handleVoiceInput}
-            title="Voice search"
-            disabled={voiceActive || !('webkitSpeechRecognition' in window)}
-            style={{display: 'flex', alignItems: 'center', gap: 4, opacity: ('webkitSpeechRecognition' in window) ? 1 : 0.5, cursor: ('webkitSpeechRecognition' in window) ? 'pointer' : 'not-allowed'}}
-          >
-            <span role="img" aria-label="mic">🎤</span>
-            {voiceActive ? 'Listening...' : 'Voice Search'}
-          </button>
+          <AudioRecorder
+            onTranscription={text => {
+              setSearchText(text);
+              handleSearch();
+            }}
+            disabled={loading}
+          />
         </div>
         <div className="card" style={{ width: '100%', maxWidth: 480, height: 320, marginBottom: 16 }}>
           <MovableMap coords={coords} setCoords={setCoords} />
@@ -266,7 +290,7 @@ function App() {
                 value={coords[0]}
                 onChange={e => setCoords([parseFloat(e.target.value), coords[1]])}
                 step="0.0000001"
-                style={{ width: '170px', fontSize: '1em' }}
+                style={{ width: '175px', fontSize: '1em' }}
               />
             </div>
             <div>
@@ -287,34 +311,218 @@ function App() {
           </div>
         )}
         {analysis && (
-          <div className="card" style={{ padding: 0, marginBottom: 0 }}>
-            <MarkdownReport text={analysis.report} />
-            <button
-              style={{margin: '12px 0 0 0', padding: '0.5em 1em', borderRadius: '7px', background: 'linear-gradient(90deg,#6366f1 60%,#38bdf8 100%)', color: '#fff', fontWeight: 600, border: 'none', fontSize: '1em', cursor: 'pointer'}}
-              onClick={() => {
-                if (window.speechSynthesis) {
-                  window.speechSynthesis.cancel();
-                  const utter = new window.SpeechSynthesisUtterance(analysis.report);
-                  utter.rate = 1.01;
-                  utter.pitch = 1.02;
-                  utter.lang = 'en-US';
-                  window.speechSynthesis.speak(utter);
-                } else {
-                  alert('Text-to-speech not supported in this browser.');
-                }
-              }}
-              aria-label="Listen to wildfire report"
-            >
-              <span role="img" aria-label="speaker">🔊</span> Listen
-            </button>
+          <div className="card" style={{ padding: '16px', marginBottom: 0 }}>
+            <MarkdownReport text={analysis.report} style={{ marginBottom: '16px' }} />
+            
+            <div className="tts-controls">
+              {/* Voice Selection Dropdown */}
+              {!isLoadingVoices && availableVoices.length > 0 ? (
+                <div className="voice-selection">
+                  <label htmlFor="voice-select">
+                    Select Voice:
+                  </label>
+                  <select
+                    id="voice-select"
+                    className="voice-select"
+                    value={selectedVoice ? selectedVoice.voiceURI : ''}
+                    onChange={(e) => {
+                      const voice = availableVoices.find(v => v.voiceURI === e.target.value);
+                      if (voice) {
+                        console.log('Selected voice:', voice.name, voice.lang);
+                        setSelectedVoice(voice);
+                      }
+                    }}
+                    disabled={isSpeaking}
+                  >
+                  {availableVoices.map((voice, index) => (
+                    <option key={index} value={voice.voiceURI}>
+                      {voice.name} ({voice.lang}){voice.default ? ' - Default' : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              ) : (
+                <div className="voice-loading">
+                  Loading voices...
+                </div>
+              )}
+
+              {/* Play/Pause Button */}
+              <div className="playback-controls">
+                <button
+                  onClick={async () => {
+                    if (!speechSynthesis) {
+                      alert('Text-to-speech is not available. Please try again or use a different browser.');
+                      return;
+                    }
+
+                    try {
+                      // Get fresh instance of speech synthesis
+                      const synth = window.speechSynthesis;
+                      
+                      if (isSpeaking) {
+                        // Pause current speech
+                        synth.pause();
+                        setIsSpeaking(false);
+                        return;
+                      }
+
+                      // If paused, resume
+                      if (synth.paused) {
+                        synth.resume();
+                        setIsSpeaking(true);
+                        return;
+                      }
+
+                      // Create a new utterance with the report text
+                      const textToSpeak = analysis.report || analysis.analysis || 'No report available to read.';
+                      console.log('Preparing to speak text:', textToSpeak.substring(0, 100) + '...');
+                      
+                      const utterance = new SpeechSynthesisUtterance(textToSpeak);
+                      
+                      // Get fresh voices list
+                      const voices = synth.getVoices();
+                      console.log('Available voices at speak time:', voices);
+                      
+                      if (voices.length === 0) {
+                        throw new Error('No voices available for speech synthesis');
+                      }
+                      
+                      // Log the currently selected voice for debugging
+                      console.log('Current selectedVoice:', selectedVoice);
+                      
+                      // Try to find the selected voice, or fall back to default
+                      let voiceToUse = selectedVoice ? 
+                        voices.find(v => v.voiceURI === selectedVoice.voiceURI) : null;
+                      
+                      // If selected voice not found, try to find a default voice
+                      if (!voiceToUse) {
+                        console.log('Selected voice not found, trying to find default voice');
+                        voiceToUse = voices.find(v => v.default) || voices[0];
+                      }
+                      
+                      if (voiceToUse) {
+                        console.log('Using voice:', voiceToUse.name, voiceToUse.lang, voiceToUse);
+                        // Important: Must set both voice and lang
+                        utterance.voice = voiceToUse;
+                        utterance.lang = voiceToUse.lang || 'en-US';
+                        console.log('Utterance voice set to:', utterance.voice);
+                      } else {
+                        console.warn('No suitable voice found, using browser default');
+                        // Let the browser choose the default voice
+                      }
+                      
+                      // Set speech parameters
+                      utterance.rate = 1.0;    // 0.1 to 10
+                      utterance.pitch = 1.0;   // 0 to 2
+                      utterance.volume = 1.0;  // 0 to 1
+                      
+                      console.log('Utterance prepared:', {
+                        text: textToSpeak.substring(0, 50) + '...',
+                        voice: utterance.voice?.name || 'default',
+                        lang: utterance.lang,
+                        rate: utterance.rate,
+                        pitch: utterance.pitch,
+                        volume: utterance.volume
+                      });
+
+                      // Set up event handlers
+                      utterance.onstart = () => {
+                        console.log('Speech started');
+                        currentUtterance.current = utterance;
+                        setIsSpeaking(true);
+                      };
+                      
+                      utterance.onend = () => {
+                        console.log('Speech ended');
+                        setIsSpeaking(false);
+                        currentUtterance.current = null;
+                      };
+                      
+                      utterance.onerror = (event) => {
+                        console.error('SpeechSynthesis error:', event);
+                        setIsSpeaking(false);
+                        currentUtterance.current = null;
+                        alert(`Error reading the report: ${event.error}. Please try again.`);
+                      };
+                      
+                      // Cancel any ongoing speech
+                      console.log('Cancelling any ongoing speech...');
+                      synth.cancel();
+                      
+                      // Add a small delay to ensure the previous speech is fully cancelled
+                      setTimeout(() => {
+                        try {
+                          console.log('Attempting to speak...');
+                          synth.speak(utterance);
+                          console.log('Speech started successfully');
+                        } catch (error) {
+                          console.error('Error starting speech:', error);
+                          setIsSpeaking(false);
+                          alert(`Failed to start speech: ${error.message}. Please try again.`);
+                        }
+                      }, 200);
+                    } catch (error) {
+                      console.error('Text-to-speech error:', error);
+                      setIsSpeaking(false);
+                      alert('Failed to initialize text-to-speech. Please check your browser permissions.');
+                    }
+                  }}
+                  className={`playback-button primary ${isSpeaking ? 'playing' : ''}`}
+                  aria-label={isSpeaking ? 'Pause reading' : 'Listen to report'}
+                  title={isSpeaking ? 'Pause reading' : 'Listen to report'}
+                >
+                <span role="img" aria-hidden="true">
+                  {isSpeaking ? '⏸️' : '🔊'}
+                </span>
+                <span>{isSpeaking ? 'Pause' : 'Listen to Report'}</span>
+              </button>
+
+              {/* Stop Button */}
+              <button
+                onClick={() => {
+                  if (speechSynthesis) {
+                    speechSynthesis.cancel();
+                    setIsSpeaking(false);
+                  }
+                }}
+                className={`playback-button stop ${(isSpeaking || speechSynthesis.speaking) ? 'active' : ''}`}
+                disabled={!isSpeaking && !speechSynthesis.speaking}
+                aria-label="Stop reading"
+                title="Stop reading"
+              >
+                <span role="img" aria-hidden="true">⏹️</span>
+              </button>
+            </div>
             {analysis.image_id && (
-              <ImageWithPlaceholder
-                src={`http://127.0.0.1:8000/api/image/${analysis.image_id}`}
-                alt="Wildfire satellite"
-                placeholder={'/wildfire_placeholder.png'}
-                style={{ width: '100%', borderRadius: 12, marginTop: 18 }}
-              />
+              <div style={{ width: '100%', marginTop: 18, position: 'relative' }}>
+                <h3>Interactive Fire Map</h3>
+                <p style={{ fontSize: '0.9em', color: '#666', marginBottom: 8 }}>
+                  Showing fire detections from the past 7 days. Click on fire markers for details.
+                </p>
+                <iframe 
+                  src={`http://127.0.0.1:8000/api/image/${analysis.image_id}`}
+                  style={{
+                    width: '100%',
+                    height: '500px',
+                    border: '1px solid #ddd',
+                    borderRadius: '12px',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+                  }}
+                  title="Interactive Fire Map"
+                  allowFullScreen
+                />
+                <div style={{
+                  fontSize: '0.8em',
+                  color: '#666',
+                  marginTop: '8px',
+                  textAlign: 'center'
+                }}>
+                  Data source: NASA FIRMS | <a href="https://firms.modaps.eosdis.nasa.gov/" target="_blank" rel="noopener noreferrer">Learn more</a>
+                </div>
+              </div>
             )}
+          </div>
           </div>
         )}
       </main>
