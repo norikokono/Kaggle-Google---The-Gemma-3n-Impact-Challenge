@@ -103,3 +103,41 @@ class WildGuardAI:
 
 # Singleton instance
 wildguard_ai = WildGuardAI(offline_mode=os.getenv('OFFLINE_MODE', 'false').lower() == 'true')
+
+# --- Whisper STT Integration ---
+# Requirements: pip install git+https://github.com/openai/whisper.git torch soundfile fastapi uvicorn
+try:
+    import whisper
+    WHISPER_AVAILABLE = True
+    whisper_model = whisper.load_model("base")  # or "tiny", "small", etc.
+except ImportError:
+    WHISPER_AVAILABLE = False
+    whisper_model = None
+    logger.warning("Whisper not available. Local STT will be disabled.")
+
+from fastapi import FastAPI, File, UploadFile
+from fastapi.responses import JSONResponse
+import tempfile
+
+# If not already created elsewhere, create FastAPI app
+try:
+    app
+except NameError:
+    app = FastAPI()
+
+@app.post("/api/transcribe")
+async def transcribe_audio(file: UploadFile = File(...)):
+    if not WHISPER_AVAILABLE or whisper_model is None:
+        return JSONResponse(status_code=503, content={"error": "Whisper STT not available on this server."})
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+        tmp.write(await file.read())
+        tmp_path = tmp.name
+    try:
+        result = whisper_model.transcribe(tmp_path)
+        text = result["text"]
+    except Exception as e:
+        logger.error(f"Whisper transcription error: {e}")
+        text = ""
+    finally:
+        os.unlink(tmp_path)
+    return {"text": text}

@@ -157,6 +157,18 @@ app.add_middleware(
 # Mount static files for serving the frontend
 app.mount("/static", StaticFiles(directory=Config.BASE_DIR / "static"), name="static")
 
+# Mount describe.py router for /api/describe
+from describe import router as describe_router
+app.include_router(describe_router)
+
+# Mount voice_intent.py router
+from voice_intent import router as voice_intent_router
+app.include_router(voice_intent_router)
+
+# Mount fact_check.py router
+from fact_check import router as fact_check_router
+app.include_router(fact_check_router)
+
 from fastapi.responses import RedirectResponse
 
 @app.get("/")
@@ -272,8 +284,6 @@ You are WildGuard, an advanced AI wildfire detection and analysis system. Your t
 - Wildlife and ecological considerations
 
 ## Response Format
-
-# 🌲 WILDFIRE SITUATION REPORT
 
 ## 🔍 EXECUTIVE SUMMARY
 [Concise 3-4 sentence overview of the current situation]
