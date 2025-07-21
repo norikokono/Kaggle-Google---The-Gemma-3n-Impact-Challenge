@@ -1,23 +1,105 @@
 import os
+import logging
+from pathlib import Path
+from typing import Optional, Dict, Any
 from dotenv import load_dotenv
-import google.generativeai as genai
 
-# Load environment variables from .env file
-load_dotenv()
-
-# Configure the API key
-api_key = os.getenv('GOOGLE_AI_STUDIO_API_KEY')
-if not api_key:
-    raise ValueError("API key not found. Please set GOOGLE_AI_STUDIO_API_KEY in your .env file")
-
-genai.configure(api_key=api_key)
-
-# Initialize the model
-model = genai.GenerativeModel('gemma-3n-e2b-it')
-
+# Try to import google.generativeai, but make it optional
 try:
-    # Generate content
-    response = model.generate_content("Roses are red...")
-    print(response.text)
-except Exception as e:
-    print(f"An error occurred: {e}")
+    import google.generativeai as genai
+    GENAI_AVAILABLE = True
+except ImportError:
+    GENAI_AVAILABLE = False
+    import warnings
+    warnings.warn("google.generativeai not available. Running in offline-only mode.")
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Configuration
+CACHE_DIR = Path("./model_cache")
+CACHE_DIR.mkdir(exist_ok=True)
+
+class WildGuardAI:
+    def __init__(self, offline_mode: bool = True):
+        """Initialize the WildGuard AI model with offline-first capabilities."""
+        self.offline_mode = offline_mode
+        self.model = None
+        self._init_model()
+
+    def _init_model(self):
+        """Initialize the Gemma model with offline support."""
+        if not GENAI_AVAILABLE:
+            self.offline_mode = True
+            logger.warning("google.generativeai not available. Forcing offline mode.")
+            
+        try:
+            if not self.offline_mode and GENAI_AVAILABLE:
+                # Online mode - requires API key
+                load_dotenv()
+                api_key = os.getenv('GOOGLE_AI_STUDIO_API_KEY')
+                if not api_key:
+                    logger.warning("API key not found. Falling back to offline mode.")
+                    self.offline_mode = True
+                else:
+                    genai.configure(api_key=api_key)
+                    self.model = genai.GenerativeModel('gemma-3n-e2b-it')
+                    logger.info("Initialized Gemma model in online mode")
+                    return
+
+            # Offline mode - try to load from cache
+            self._load_model_from_cache()
+            
+        except Exception as e:
+            logger.error(f"Failed to initialize model: {e}")
+            raise
+
+    def _load_model_from_cache(self):
+        """Attempt to load model from local cache."""
+        try:
+            # This is a placeholder - actual implementation would depend on Gemma's offline capabilities
+            # In a real implementation, we would check for cached model weights and load them
+            logger.info("Running in offline mode with local model cache")
+            # Placeholder for actual model loading logic
+            self.model = {"status": "offline", "capabilities": ["text_generation"]}
+            
+        except Exception as e:
+            logger.error(f"Failed to load model from cache: {e}")
+            raise
+
+    async def generate_analysis(self, prompt: str, **kwargs) -> Dict[str, Any]:
+        """Generate analysis with fallback to offline mode if needed."""
+        try:
+            if self.model and not isinstance(self.model, dict):  # If we have a real model
+                response = await self.model.generate_content_async(prompt, **kwargs)
+                return {
+                    "status": "success",
+                    "analysis": response.text,
+                    "source": "online" if not self.offline_mode else "offline_cache"
+                }
+            
+            # Fallback to offline processing
+            return await self._offline_analysis(prompt)
+            
+        except Exception as e:
+            logger.error(f"Error in generate_analysis: {e}")
+            return {
+                "status": "error",
+                "message": str(e),
+                "source": "online" if not self.offline_mode else "offline_cache"
+            }
+
+    async def _offline_analysis(self, prompt: str) -> Dict[str, Any]:
+        """Handle analysis when offline or model loading fails."""
+        # This is a simplified version - in a real implementation, you would use a smaller,
+        # locally cached model for offline inference
+        return {
+            "status": "offline_limited",
+            "message": "Running in offline mode with limited capabilities",
+            "analysis": "Detailed analysis requires an internet connection. Basic features are available offline.",
+            "source": "offline_fallback"
+        }
+
+# Singleton instance
+wildguard_ai = WildGuardAI(offline_mode=os.getenv('OFFLINE_MODE', 'false').lower() == 'true')
