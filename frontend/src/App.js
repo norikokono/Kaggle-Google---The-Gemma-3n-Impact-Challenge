@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import './App.css';
 import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -9,6 +9,7 @@ import markerShadow from 'leaflet/dist/images/marker-shadow.png';
 import MarkdownReport from './MarkdownReport';
 import ImageWithPlaceholder from './ImageWithPlaceholder';
 import AudioRecorder from './AudioRecorder';
+import WildfireDetection from './components/WildfireDetection';
 
 // Geocode utility (OpenStreetMap Nominatim)
 async function geocodeLocation(locationText) {
@@ -25,6 +26,16 @@ async function geocodeLocation(locationText) {
   return null;
 }
 
+// Get color based on fire detection confidence level
+function getFireColor(confidence) {
+  const value = Math.min(100, Math.max(0, confidence || 0));
+  if (value > 80) return '#ff0000';     // Red for high confidence
+  if (value > 60) return '#ff6600';     // Orange-red
+  if (value > 40) return '#ff9900';     // Orange
+  if (value > 20) return '#ffcc00';     // Yellow-orange
+  return '#ffff00';                     // Yellow for low confidence
+}
+
 // Fix leaflet's default icon path
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -33,7 +44,7 @@ L.Icon.Default.mergeOptions({
   shadowUrl: markerShadow,
 });
 
-function MovableMap({ coords, setCoords }) {
+function MovableMap({ coords, setCoords, onMapCreated }) {
   const mapRef = useRef();
   const [mapCenter, setMapCenter] = useState(coords);
 
@@ -45,12 +56,34 @@ function MovableMap({ coords, setCoords }) {
     }
   }, [coords]);
 
+  // Set the map reference in the global scope for WildfireDetection to access
+  useEffect(() => {
+    if (mapRef.current && window.setMapRef) {
+      window.setMapRef(mapRef.current);
+    }
+    
+    // Call the onMapCreated callback when the map is created
+    if (mapRef.current && onMapCreated) {
+      onMapCreated(mapRef.current);
+    }
+  }, [mapRef.current, onMapCreated]);
+
   return (
     <MapContainer
       center={mapCenter}
       zoom={8}
       style={{ height: '100%', width: '100%', borderRadius: 12 }}
-      whenCreated={mapInstance => { mapRef.current = mapInstance; }}
+      whenCreated={mapInstance => {
+        mapRef.current = mapInstance;
+        if (window.setMapRef) {
+          window.setMapRef(mapInstance);
+        }
+        
+        // Call the onMapCreated callback
+        if (onMapCreated) {
+          onMapCreated(mapInstance);
+        }
+      }}
     >
       <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
       <Marker position={coords} />
@@ -101,7 +134,13 @@ function App() {
   const [availableVoices, setAvailableVoices] = useState([]);
   const [isLoadingVoices, setIsLoadingVoices] = useState(true);
   const [speechSynthesis, setSpeechSynthesis] = useState(null);
+  const [mapInstance, setMapInstance] = useState(null);
   const currentUtterance = useRef(null);
+
+  // Update map instance when it's created
+  const handleMapCreated = useCallback((map) => {
+    setMapInstance(map);
+  }, []);
 
   // Handle text search
   const handleSearch = async () => {
@@ -274,8 +313,16 @@ function App() {
             disabled={loading}
           />
         </div>
-        <div className="card" style={{ width: '100%', maxWidth: 480, height: 320, marginBottom: 16 }}>
-          <MovableMap coords={coords} setCoords={setCoords} />
+        <div className="card" style={{ width: '100%', maxWidth: '100%', height: '500px', marginBottom: '16px', position: 'relative' }}>
+          <div style={{ position: 'absolute', top: '10px', left: '10px', zIndex: 1000, background: 'white', padding: '5px', borderRadius: '4px', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
+            <LocationDisplay coords={coords} />
+          </div>
+          <MovableMap 
+            coords={coords} 
+            setCoords={setCoords} 
+            onMapCreated={handleMapCreated}
+          />
+          {mapInstance && <WildfireDetection map={mapInstance} />}
         </div>
         <div className="card" style={{ marginBottom: 0 }}>
           <div style={{ marginBottom: 8, fontWeight: 500, color: '#345', fontSize: '1.04em' }}>
@@ -311,45 +358,16 @@ function App() {
           </div>
         )}
         {analysis && (
-          <div className="card" style={{ padding: '16px', marginBottom: 0 }}>
-            <MarkdownReport text={analysis.report} style={{ marginBottom: '16px' }} />
-            
-            <div className="tts-controls">
-              {/* Voice Selection Dropdown */}
-              {!isLoadingVoices && availableVoices.length > 0 ? (
-                <div className="voice-selection">
-                  <label htmlFor="voice-select">
-                    Select Voice:
-                  </label>
-                  <select
-                    id="voice-select"
-                    className="voice-select"
-                    value={selectedVoice ? selectedVoice.voiceURI : ''}
-                    onChange={(e) => {
-                      const voice = availableVoices.find(v => v.voiceURI === e.target.value);
-                      if (voice) {
-                        console.log('Selected voice:', voice.name, voice.lang);
-                        setSelectedVoice(voice);
-                      }
-                    }}
-                    disabled={isSpeaking}
-                  >
-                  {availableVoices.map((voice, index) => (
-                    <option key={index} value={voice.voiceURI}>
-                      {voice.name} ({voice.lang}){voice.default ? ' - Default' : ''}
-                    </option>
-                  ))}
-                </select>
+          <div>
+            {/* Listen to Report Card */}
+            <div className="card mb-4">
+              <div className="card-header bg-info text-white">
+                <h5 className="mb-0">Listen to Report</h5>
               </div>
-              ) : (
-                <div className="voice-loading">
-                  Loading voices...
-                </div>
-              )}
-
-              {/* Play/Pause Button */}
-              <div className="playback-controls">
-                <button
+              <div className="card-body">
+                <div className="d-flex align-items-center">
+                  {/* Play/Pause Button */}
+                  <button
                   onClick={async () => {
                     if (!speechSynthesis) {
                       alert('Text-to-speech is not available. Please try again or use a different browser.');
@@ -374,9 +392,17 @@ function App() {
                         return;
                       }
 
-                      // Create a new utterance with the report text
-                      const textToSpeak = analysis.report || analysis.analysis || 'No report available to read.';
-                      console.log('Preparing to speak text:', textToSpeak.substring(0, 100) + '...');
+                      // Create a new utterance with the report text (with emojis removed)
+                      const removeEmojis = (text) => {
+                        if (!text) return '';
+                        // Remove common emojis and symbols
+                        return text.replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F1E0}-\u{1F1FF}]/gu, '')
+                                  .replace(/[\u{1F900}-\u{1F9FF}]/gu, ''); // Additional emoji ranges
+                      };
+                      
+                      const rawText = analysis.report || analysis.analysis || 'No report available to read.';
+                      const textToSpeak = removeEmojis(rawText);
+                      console.log('Preparing to speak text (emojis removed):', textToSpeak.substring(0, 100) + '...');
                       
                       const utterance = new SpeechSynthesisUtterance(textToSpeak);
                       
@@ -468,61 +494,130 @@ function App() {
                       alert('Failed to initialize text-to-speech. Please check your browser permissions.');
                     }
                   }}
-                  className={`playback-button primary ${isSpeaking ? 'playing' : ''}`}
-                  aria-label={isSpeaking ? 'Pause reading' : 'Listen to report'}
-                  title={isSpeaking ? 'Pause reading' : 'Listen to report'}
-                >
-                <span role="img" aria-hidden="true">
-                  {isSpeaking ? '⏸️' : '🔊'}
-                </span>
-                <span>{isSpeaking ? 'Pause' : 'Listen to Report'}</span>
-              </button>
+                    className={`btn ${isSpeaking ? 'btn-warning' : 'btn-primary'} me-3`}
+                    aria-label={isSpeaking ? 'Pause reading' : 'Listen to report'}
+                    title={isSpeaking ? 'Pause reading' : 'Listen to report'}
+                  >
+                    <i className={`bi ${isSpeaking ? 'bi-pause-fill' : 'bi-play-fill'} me-2`}></i>
+                    {isSpeaking ? 'Pause' : 'Play'}
+                  </button>
 
-              {/* Stop Button */}
-              <button
-                onClick={() => {
-                  if (speechSynthesis) {
-                    speechSynthesis.cancel();
-                    setIsSpeaking(false);
-                  }
-                }}
-                className={`playback-button stop ${(isSpeaking || speechSynthesis.speaking) ? 'active' : ''}`}
-                disabled={!isSpeaking && !speechSynthesis.speaking}
-                aria-label="Stop reading"
-                title="Stop reading"
-              >
-                <span role="img" aria-hidden="true">⏹️</span>
-              </button>
-            </div>
-            {analysis.image_id && (
-              <div style={{ width: '100%', marginTop: 18, position: 'relative' }}>
-                <h3>Interactive Fire Map</h3>
-                <p style={{ fontSize: '0.9em', color: '#666', marginBottom: 8 }}>
-                  Showing fire detections from the past 7 days. Click on fire markers for details.
-                </p>
-                <iframe 
-                  src={`http://127.0.0.1:8000/api/image/${analysis.image_id}`}
-                  style={{
-                    width: '100%',
-                    height: '500px',
-                    border: '1px solid #ddd',
-                    borderRadius: '12px',
-                    boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-                  }}
-                  title="Interactive Fire Map"
-                  allowFullScreen
-                />
-                <div style={{
-                  fontSize: '0.8em',
-                  color: '#666',
-                  marginTop: '8px',
-                  textAlign: 'center'
-                }}>
-                  Data source: NASA FIRMS | <a href="https://firms.modaps.eosdis.nasa.gov/" target="_blank" rel="noopener noreferrer">Learn more</a>
+                  {/* Stop Button */}
+                  <button
+                    onClick={() => {
+                      if (speechSynthesis) {
+                        speechSynthesis.cancel();
+                        setIsSpeaking(false);
+                      }
+                    }}
+                    className="btn btn-outline-secondary me-3"
+                    disabled={!isSpeaking && !speechSynthesis?.speaking}
+                    aria-label="Stop reading"
+                    title="Stop reading"
+                  >
+                    <i className="bi bi-stop-fill me-2"></i>
+                    Stop
+                  </button>
+
+                  {/* Voice Selection */}
+                  {!isLoadingVoices && availableVoices.length > 0 ? (
+                    <div className="voice-selection">
+                      <select
+                        value={selectedVoice?.voiceURI || ''}
+                        onChange={(e) => {
+                          const voice = availableVoices.find(v => v.voiceURI === e.target.value);
+                          if (voice) {
+                            console.log('Selected voice:', voice.name, voice.lang);
+                            setSelectedVoice(voice);
+                          }
+                        }}
+                        className="form-select form-select-sm"
+                        style={{ width: 'auto' }}
+                        disabled={isSpeaking}
+                      >
+                        {availableVoices.map((voice, index) => (
+                          <option key={index} value={voice.voiceURI}>
+                            {voice.name} ({voice.lang}){voice.default ? ' - Default' : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : (
+                    <div className="text-muted ms-auto">
+                      <small>Loading voices...</small>
+                    </div>
+                  )}
                 </div>
               </div>
-            )}
-          </div>
+            </div>
+
+            {/* Wildfire Detection from Satellite Imagery */}
+            {mapInstance && <WildfireDetection map={mapInstance} />}
+            
+            {/* Interactive Fire Map Card */}
+            <div className="card mb-4">
+              <div className="card-header bg-success text-white">
+                <h5 className="mb-0">Interactive Fire Map</h5>
+              </div>
+              <div className="card-body" style={{ padding: 0 }}>
+                <div style={{ height: '600px', width: '100%' }}>
+                  <MapContainer 
+                    center={coords} 
+                    zoom={8} 
+                    style={{ height: '100%', width: '100%' }}
+                    whenCreated={(map) => {
+                      // Add fire data layer
+                      if (analysis && analysis.fire_detections && analysis.fire_detections.length > 0) {
+                        analysis.fire_detections.forEach(fire => {
+                          if (fire.latitude && fire.longitude) {
+                            const marker = L.circleMarker(
+                              [fire.latitude, fire.longitude], 
+                              {
+                                radius: 6,
+                                fillColor: getFireColor(fire.confidence || 50),
+                                color: '#000',
+                                weight: 1,
+                                opacity: 1,
+                                fillOpacity: 0.8
+                              }
+                            );
+                            
+                            const popupContent = `
+                              <div style="min-width: 200px">
+                                <strong>Fire Detection</strong><br>
+                                Confidence: ${Math.round(fire.confidence || 50)}%<br>
+                                Date: ${fire.acq_date || 'N/A'}<br>
+                                ${fire.brightness ? `Brightness: ${fire.brightness} K<br>` : ''}
+                                <small>Click for details</small>
+                              </div>
+                            `;
+                            
+                            marker.bindPopup(popupContent);
+                            marker.addTo(map);
+                          }
+                        });
+                      }
+                    }}
+                  >
+                    <TileLayer
+                      url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                      attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                    />
+                    {analysis && analysis.fire_detections && analysis.fire_detections.length === 0 && (
+                      <div className="text-center py-4">
+                        <p>No fire detections found in this area.</p>
+                      </div>
+                    )}
+                  </MapContainer>
+                </div>
+                <div className="text-muted small p-3 text-center" style={{ borderTop: '1px solid #eee' }}>
+                  Data source: NASA FIRMS |{' '}
+                  <a href="https://firms.modaps.eosdis.nasa.gov/map/" target="_blank" rel="noopener noreferrer">
+                    View on NASA FIRMS
+                  </a>
+                </div>
+              </div>
+            </div>
           </div>
         )}
       </main>
