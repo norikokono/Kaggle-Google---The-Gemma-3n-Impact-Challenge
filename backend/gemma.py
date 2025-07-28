@@ -50,7 +50,7 @@ class WildGuardAI:
                 else:
                     self.genai.configure(api_key=api_key)
                     self.model = self.genai.GenerativeModel('gemma-3n-e4b-it')
-                    logger.info("Initialized Gemini Pro Vision model in online mode")
+                    logger.info("Initialized Gemma 3n model in online mode")
                     return
 
             # Offline mode - try to load from cache or use simplified model

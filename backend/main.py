@@ -3,21 +3,20 @@
 WildGuard: Offline-First AI for Early Wildfire Detection
 Uses NASA FIRMS API for fire detection and Google's Gemma 3n for analysis
 """
-import io
 import os
 import json
-import time
-import asyncio
 import logging
+import asyncio
 import numpy as np
 import geopandas as gpd
 import matplotlib.pyplot as plt
 import contextily as cx
+import math  # Import the entire math module
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Union, Tuple, Callable
-from math import cos, pi, sqrt, atan2, sin, radians, degrees
+from pydantic import BaseModel, Field
 import ssl  
 import uuid
 import aiohttp
@@ -31,21 +30,15 @@ import aiofiles.os
 import pandas as pd
 from io import StringIO, BytesIO
 import csv
-
-from fastapi import FastAPI, HTTPException, Query, UploadFile, File, Form, BackgroundTasks, Request, status, Depends
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi import FastAPI, HTTPException, Depends, Request, UploadFile, File, Form, BackgroundTasks, status
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel, Field, validator
-from dotenv import load_dotenv
-
-# Image processing
-from PIL import Image
-import base64
+from fastapi.responses import JSONResponse, FileResponse, HTMLResponse, Response
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
 # Local imports
 from gemma import WildGuardAI
+from utils import Coordinates, BoundingBox
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -66,18 +59,6 @@ Use clear, concise language and prioritize human safety in all recommendations.
 """
 
 # Pydantic Models
-class Coordinates(BaseModel):
-    """Geographic coordinates (latitude/longitude)."""
-    lat: float = Field(..., ge=-90, le=90, description="Latitude (-90 to 90)")
-    lng: float = Field(..., ge=-180, le=180, description="Longitude (-180 to 180)")
-
-class BoundingBox(BaseModel):
-    """Geographic bounding box."""
-    north: float = Field(..., ge=-90, le=90, description="Northern boundary latitude")
-    south: float = Field(..., ge=-90, le=90, description="Southern boundary latitude")
-    east: float = Field(..., ge=-180, le=180, description="Eastern boundary longitude")
-    west: float = Field(..., ge=-180, le=180, description="Western boundary longitude")
-
 class WildfireRequest(BaseModel):
     coordinates: Coordinates
     date_range: str = Field("7d", description="Time range to analyze (e.g., 7d, 30d)")
@@ -123,6 +104,11 @@ class FireAnalysisResponse(BaseModel):
     map_html: str
     timestamp: str
     metadata: Dict
+
+class FireAnalysisRequest(BaseModel):
+    lat: float
+    lng: float
+    radius_km: float = 50.0
 
 # Application configuration
 class Config:
@@ -231,13 +217,14 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3000",  # React dev server
         "http://127.0.0.1:3000",  # React dev server alternative
-        "https://your-production-domain.com"  # Add your production domain here
+        "http://localhost:8000",  # Local FastAPI server
+        "http://127.0.0.1:8000"   # Local FastAPI server alternative
     ],
     allow_credentials=True,
-    allow_methods=["*"],  # Allow all methods
-    allow_headers=["*"],  # Allow all headers
-    expose_headers=["*"],  # Expose all headers
-    max_age=600,  # Cache preflight requests for 10 minutes
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["*"],
+    expose_headers=["*"],
+    max_age=600,
 )
 
 # Add security headers middleware
@@ -255,12 +242,18 @@ async def add_security_headers(request: Request, call_next):
 app.mount("/static", StaticFiles(directory=Config.STATIC_FOLDER), name="static")
 
 # Mount describe.py router for /api/describe
-from describe import router as describe_router
-app.include_router(describe_router)
+try:
+    from describe import router as describe_router
+    app.include_router(describe_router, prefix="/api/describe")
+except ImportError as e:
+    logger.warning(f"Failed to load describe router: {e}")
 
-# Mount voice_intent.py router
-from voice_intent import router as voice_intent_router
-app.include_router(voice_intent_router)
+# Mount voice_intent.py router if it exists
+try:
+    from voice_intent import router as voice_router
+    app.include_router(voice_router, prefix="/api/voice")
+except ImportError as e:
+    logger.warning(f"Voice intent module not available: {e}")
 
 from fastapi.responses import RedirectResponse
 
@@ -999,34 +992,27 @@ async def get_generated_image(
 
 @app.post("/api/analyze-fire-map", response_model=FireAnalysisResponse)
 async def analyze_fire_map(
-    lat: float = Form(...),
-    lng: float = Form(...),
-    radius_km: float = Form(50.0),
-    image_file: UploadFile = File(None)
+    request_data: FireAnalysisRequest,
+    background_tasks: BackgroundTasks,
+    request: Request = None
 ):
     """
     Analyze fire map data for a specific location.
     
-    This endpoint processes the uploaded map image and fetches fire data from NASA FIRMS API
+    This endpoint processes the request data and fetches fire data from NASA FIRMS API
     to provide a comprehensive fire analysis for the specified location.
     """
-    logger.info(f"Received request to analyze fire map at lat: {lat}, lng: {lng}, radius: {radius_km}km")
-    
     try:
+        # Log the received request data
+        logger.info(f"Received request data: {request_data}")
+        
+        # Extract values from the request
+        lat = request_data.lat
+        lng = request_data.lng
+        radius_km = request_data.radius_km
+        
         # Generate a unique ID for this analysis
         analysis_id = str(uuid.uuid4())
-        
-        # Save the uploaded image if provided
-        if image_file:
-            image_path = Config.UPLOAD_FOLDER / f"{analysis_id}.png"
-            with open(image_path, "wb") as buffer:
-                shutil.copyfileobj(image_file.file, buffer)
-            logger.info(f"Saved uploaded image to {image_path}")
-            
-            # Save a debug copy
-            debug_path = Config.UPLOAD_FOLDER / f"debug_map_{int(time.time())}.png"
-            shutil.copy(image_path, debug_path)
-            logger.info(f"Saved debug image to {debug_path}")
         
         # Calculate bounding box for fire data
         extent = calculate_bounding_box(lat, lng, radius_km)
@@ -1035,24 +1021,40 @@ async def analyze_fire_map(
         fire_data = await fetch_firms_fire_data(extent, days=3)  # Last 3 days of data
         
         # Log the number of fire detections
-        fire_detections = fire_data
+        fire_detections = fire_data if isinstance(fire_data, list) else []
         logger.info(f"Retrieved {len(fire_detections)} fire detections from FIRMS")
         
         # Prepare analysis prompt
-        analysis_prompt = await generate_analysis_prompt(Coordinates(lat=lat, lng=lng), {'data': fire_data})
+        analysis_prompt = await generate_analysis_prompt(Coordinates(lat=lat, lng=lng), fire_data)
         
         # Generate analysis using the AI model
         logger.info("Sending data to WildGuard AI for analysis...")
-        analysis = await wildguard_ai.generate_analysis(analysis_prompt)
+        analysis_result = await wildguard_ai.generate_analysis(analysis_prompt)
         
         # Process the analysis to extract structured data
-        processed_analysis = process_ai_analysis(analysis)
+        processed_analysis = {
+            "summary": analysis_result.get("analysis", "No analysis available"),
+            "risk_level": analysis_result.get("risk_level", "unknown"),
+            "confidence": analysis_result.get("confidence", 0.0),
+            "recommendations": analysis_result.get("recommendations", [])
+        }
         
         # Generate a map with the fire data
         map_html_path = await generate_fire_map(fire_detections, lat, lng, radius_km, analysis_id)
         
-        # Generate a static map image for the response
-        map_image_url = f"/api/image/{analysis_id}"
+        # Get base URL for generating absolute URLs
+        base_url = "http://localhost:8000"  # Default fallback
+        if request:
+            request_scope = request.scope
+            scheme = request_scope.get('scheme', 'http')
+            server_host = request_scope.get('server', ('localhost', 8000))[0]
+            server_port = request_scope.get('server', ('localhost', 8000))[1]
+            base_url = f"{scheme}://{server_host}"
+            if server_port not in (80, 443):  # Only add port if it's not standard
+                base_url += f":{server_port}"
+        
+        map_image_url = f"{base_url}/api/image/{analysis_id}"
+        map_html_url = f"{base_url}/map/{analysis_id}"
         
         # Return the analysis results
         return {
@@ -1061,7 +1063,7 @@ async def analyze_fire_map(
             "fire_detections": fire_detections,
             "analysis": processed_analysis,
             "map_url": map_image_url,
-            "map_html": f"/map/{analysis_id}",
+            "map_html": map_html_url,
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "metadata": {
                 "location": {"lat": lat, "lng": lng},
@@ -1071,15 +1073,9 @@ async def analyze_fire_map(
             }
         }
         
-    except HTTPException as http_exc:
-        logger.error(f"HTTP error in analyze_fire_map: {str(http_exc)}")
-        raise http_exc
     except Exception as e:
         logger.error(f"Error in analyze_fire_map: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to analyze fire map: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/analyze", response_model=WildfireResponse)
 async def analyze_wildfire(
@@ -1522,8 +1518,8 @@ def calculate_bounding_box(lat: float, lng: float, radius_km: float = 50.0) -> L
     R = 6371.0
     
     # Convert latitude and longitude from degrees to radians
-    lat_rad = radians(lat)
-    lng_rad = radians(lng)
+    lat_rad = math.radians(lat)
+    lng_rad = math.radians(lng)
     
     # Calculate the angular distance in radians
     angular_distance = radius_km / R
@@ -1533,15 +1529,15 @@ def calculate_bounding_box(lat: float, lng: float, radius_km: float = 50.0) -> L
     max_lat = lat_rad + angular_distance
     
     # Calculate the longitude bounds (adjust for latitude)
-    delta_lng = angular_distance / cos(lat_rad)
+    delta_lng = angular_distance / math.cos(lat_rad)
     min_lng = lng_rad - delta_lng
     max_lng = lng_rad + delta_lng
     
     # Convert back to degrees
-    min_lat_deg = degrees(min_lat)
-    max_lat_deg = degrees(max_lat)
-    min_lng_deg = degrees(min_lng)
-    max_lng_deg = degrees(max_lng)
+    min_lat_deg = math.degrees(min_lat)
+    max_lat_deg = math.degrees(max_lat)
+    min_lng_deg = math.degrees(min_lng)
+    max_lng_deg = math.degrees(max_lng)
     
     # Ensure valid latitude/longitude ranges
     min_lat_deg = max(min_lat_deg, -90.0)
