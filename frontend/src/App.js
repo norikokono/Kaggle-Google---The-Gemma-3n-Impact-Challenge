@@ -135,7 +135,9 @@ function App() {
   const [isLoadingVoices, setIsLoadingVoices] = useState(true);
   const [speechSynthesis, setSpeechSynthesis] = useState(null);
   const [mapInstance, setMapInstance] = useState(null);
+  const [ttsError, setTtsError] = useState(null);
   const currentUtterance = useRef(null);
+  const [mapView, setMapView] = useState('satellite'); // 'satellite' or 'street'
 
   // Update map instance when it's created
   const handleMapCreated = useCallback((map) => {
@@ -257,36 +259,96 @@ function App() {
     setLoading(true);
     setAnalysis(null);
     try {
-      let reqBody;
-      if (locationText) {
-        // Optionally: geocode locationText to lat/lng
-        reqBody = {
-          coordinates: { lat: coords[0], lng: coords[1] },
-          radius_km: 50,
-          date_range: "7d",
-          generate_image: true,
-          include_evacuation: true
-        };
-      } else {
-        reqBody = {
-          coordinates: { lat: coords[0], lng: coords[1] },
-          radius_km: 50,
-          date_range: "7d",
-          generate_image: true,
-          include_evacuation: true
-        };
-      }
-      const res = await fetch('http://127.0.0.1:8000/api/analyze', {
+      const requestData = {
+        lat: coords[0],
+        lng: coords[1],
+        radius_km: 50
+      };
+      
+      const response = await fetch('http://127.0.0.1:8000/api/analyze-fire-map', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(reqBody)
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestData)
       });
-      const data = await res.json();
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+      }
+      
+      const data = await response.json();
       setAnalysis(data);
     } catch (err) {
-      setAnalysis({ error: 'Failed to fetch analysis.' });
+      console.error('Error fetching analysis:', err);
+      setAnalysis({ 
+        error: `Failed to fetch analysis: ${err.message}`,
+        details: process.env.NODE_ENV === 'development' ? err.stack : undefined
+      });
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
+  };
+
+  const speakWithBackendTTS = async (text) => {
+    try {
+      // Clean the text (remove emojis and special characters)
+      const cleanedText = text
+        .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '')
+        .replace(/[^\w\s.,!?]/g, '') // Remove any remaining special characters
+        .replace(/\s+/g, ' ') // Replace multiple spaces with a single space
+        .trim();
+      
+      // Create a new utterance with the cleaned text
+      const utterance = new SpeechSynthesisUtterance(cleanedText);
+      
+      // Set up event handlers
+      utterance.onend = () => {
+        console.log('Speech finished');
+        setIsSpeaking(false);
+        setTtsError(null);
+      };
+      
+      utterance.onerror = (event) => {
+        console.error('SpeechSynthesis error:', event);
+        setTtsError('Error during speech synthesis');
+        setIsSpeaking(false);
+      };
+
+      // Cancel any current speech
+      speechSynthesis.cancel();
+      
+      // Start speaking
+      speechSynthesis.speak(utterance);
+      setIsSpeaking(true);
+      setTtsError(null);
+      
+    } catch (error) {
+      console.error('Error with TTS:', error);
+      setTtsError('Speech synthesis is not available in this browser');
+      setIsSpeaking(false);
+    }
+  };
+
+  const handleTtsClick = () => {
+    if (isSpeaking) {
+      // If already speaking, stop it
+      speechSynthesis.cancel();
+      setIsSpeaking(false);
+      return;
+    }
+
+    if (speechSynthesis.paused) {
+      // If paused, resume
+      speechSynthesis.resume();
+      setIsSpeaking(true);
+      return;
+    }
+
+    // Start new speech
+    const rawText = analysis.report || analysis.analysis || 'No report available to read.';
+    speakWithBackendTTS(rawText);
   };
 
   return (
@@ -297,6 +359,7 @@ function App() {
       </header>
       <main>
         <div className="search-row">
+          <p>Please enter a location to search, click on the map to search or speak to search for wildfires</p>
           <input
             type="text"
             placeholder="Search for a city, landmark, or address..."
@@ -304,13 +367,22 @@ function App() {
             onChange={e => setSearchText(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') handleSearch(); }}
           />
-          <button onClick={handleSearch}>Search</button>
+          <button 
+            onClick={handleSearch}
+            disabled={!searchText.trim() || loading}
+          >
+            {loading ? 'Searching...' : 'Search'}
+          </button>
+          <div className="or-divider">or</div>
           <AudioRecorder
-            onTranscription={text => {
+            onTranscription={(text) => {
               setSearchText(text);
-              handleSearch();
+              // Small delay to ensure state is updated before search
+              setTimeout(() => {
+                handleSearch();
+              }, 100);
             }}
-            disabled={loading}
+            disabled={!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) || loading}
           />
         </div>
         <div className="card" style={{ width: '100%', maxWidth: '100%', height: '500px', marginBottom: '16px', position: 'relative' }}>
@@ -366,186 +438,21 @@ function App() {
               </div>
               <div className="card-body">
                 <div className="d-flex align-items-center">
-                  {/* Play/Pause Button */}
-                  <button
-                  onClick={async () => {
-                    if (!speechSynthesis) {
-                      alert('Text-to-speech is not available. Please try again or use a different browser.');
-                      return;
-                    }
-
-                    try {
-                      // Get fresh instance of speech synthesis
-                      const synth = window.speechSynthesis;
-                      
-                      if (isSpeaking) {
-                        // Pause current speech
-                        synth.pause();
-                        setIsSpeaking(false);
-                        return;
-                      }
-
-                      // If paused, resume
-                      if (synth.paused) {
-                        synth.resume();
-                        setIsSpeaking(true);
-                        return;
-                      }
-
-                      // Create a new utterance with the report text (with emojis removed)
-                      const removeEmojis = (text) => {
-                        if (!text) return '';
-                        // Remove common emojis and symbols
-                        return text.replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F1E0}-\u{1F1FF}]/gu, '')
-                                  .replace(/[\u{1F900}-\u{1F9FF}]/gu, ''); // Additional emoji ranges
-                      };
-                      
-                      const rawText = analysis.report || analysis.analysis || 'No report available to read.';
-                      const textToSpeak = removeEmojis(rawText);
-                      console.log('Preparing to speak text (emojis removed):', textToSpeak.substring(0, 100) + '...');
-                      
-                      const utterance = new SpeechSynthesisUtterance(textToSpeak);
-                      
-                      // Get fresh voices list
-                      const voices = synth.getVoices();
-                      console.log('Available voices at speak time:', voices);
-                      
-                      if (voices.length === 0) {
-                        throw new Error('No voices available for speech synthesis');
-                      }
-                      
-                      // Log the currently selected voice for debugging
-                      console.log('Current selectedVoice:', selectedVoice);
-                      
-                      // Try to find the selected voice, or fall back to default
-                      let voiceToUse = selectedVoice ? 
-                        voices.find(v => v.voiceURI === selectedVoice.voiceURI) : null;
-                      
-                      // If selected voice not found, try to find a default voice
-                      if (!voiceToUse) {
-                        console.log('Selected voice not found, trying to find default voice');
-                        voiceToUse = voices.find(v => v.default) || voices[0];
-                      }
-                      
-                      if (voiceToUse) {
-                        console.log('Using voice:', voiceToUse.name, voiceToUse.lang, voiceToUse);
-                        // Important: Must set both voice and lang
-                        utterance.voice = voiceToUse;
-                        utterance.lang = voiceToUse.lang || 'en-US';
-                        console.log('Utterance voice set to:', utterance.voice);
-                      } else {
-                        console.warn('No suitable voice found, using browser default');
-                        // Let the browser choose the default voice
-                      }
-                      
-                      // Set speech parameters
-                      utterance.rate = 1.0;    // 0.1 to 10
-                      utterance.pitch = 1.0;   // 0 to 2
-                      utterance.volume = 1.0;  // 0 to 1
-                      
-                      console.log('Utterance prepared:', {
-                        text: textToSpeak.substring(0, 50) + '...',
-                        voice: utterance.voice?.name || 'default',
-                        lang: utterance.lang,
-                        rate: utterance.rate,
-                        pitch: utterance.pitch,
-                        volume: utterance.volume
-                      });
-
-                      // Set up event handlers
-                      utterance.onstart = () => {
-                        console.log('Speech started');
-                        currentUtterance.current = utterance;
-                        setIsSpeaking(true);
-                      };
-                      
-                      utterance.onend = () => {
-                        console.log('Speech ended');
-                        setIsSpeaking(false);
-                        currentUtterance.current = null;
-                      };
-                      
-                      utterance.onerror = (event) => {
-                        console.error('SpeechSynthesis error:', event);
-                        setIsSpeaking(false);
-                        currentUtterance.current = null;
-                        alert(`Error reading the report: ${event.error}. Please try again.`);
-                      };
-                      
-                      // Cancel any ongoing speech
-                      console.log('Cancelling any ongoing speech...');
-                      synth.cancel();
-                      
-                      // Add a small delay to ensure the previous speech is fully cancelled
-                      setTimeout(() => {
-                        try {
-                          console.log('Attempting to speak...');
-                          synth.speak(utterance);
-                          console.log('Speech started successfully');
-                        } catch (error) {
-                          console.error('Error starting speech:', error);
-                          setIsSpeaking(false);
-                          alert(`Failed to start speech: ${error.message}. Please try again.`);
-                        }
-                      }, 200);
-                    } catch (error) {
-                      console.error('Text-to-speech error:', error);
-                      setIsSpeaking(false);
-                      alert('Failed to initialize text-to-speech. Please check your browser permissions.');
-                    }
-                  }}
-                    className={`btn ${isSpeaking ? 'btn-warning' : 'btn-primary'} me-3`}
-                    aria-label={isSpeaking ? 'Pause reading' : 'Listen to report'}
-                    title={isSpeaking ? 'Pause reading' : 'Listen to report'}
+                  {/* TTS Button */}
+                  <button 
+                    onClick={handleTtsClick}
+                    className="btn btn-sm btn-outline-secondary me-2"
+                    disabled={!analysis}
+                    title={isSpeaking ? 'Stop reading' : 'Listen to report'}
                   >
-                    <i className={`bi ${isSpeaking ? 'bi-pause-fill' : 'bi-play-fill'} me-2`}></i>
-                    {isSpeaking ? 'Pause' : 'Play'}
+                    {isSpeaking ? (
+                      <i className="bi bi-stop-fill"></i>
+                    ) : (
+                      <i className="bi bi-volume-up"></i>
+                    )}
                   </button>
-
-                  {/* Stop Button */}
-                  <button
-                    onClick={() => {
-                      if (speechSynthesis) {
-                        speechSynthesis.cancel();
-                        setIsSpeaking(false);
-                      }
-                    }}
-                    className="btn btn-outline-secondary me-3"
-                    disabled={!isSpeaking && !speechSynthesis?.speaking}
-                    aria-label="Stop reading"
-                    title="Stop reading"
-                  >
-                    <i className="bi bi-stop-fill me-2"></i>
-                    Stop
-                  </button>
-
-                  {/* Voice Selection */}
-                  {!isLoadingVoices && availableVoices.length > 0 ? (
-                    <div className="voice-selection">
-                      <select
-                        value={selectedVoice?.voiceURI || ''}
-                        onChange={(e) => {
-                          const voice = availableVoices.find(v => v.voiceURI === e.target.value);
-                          if (voice) {
-                            console.log('Selected voice:', voice.name, voice.lang);
-                            setSelectedVoice(voice);
-                          }
-                        }}
-                        className="form-select form-select-sm"
-                        style={{ width: 'auto' }}
-                        disabled={isSpeaking}
-                      >
-                        {availableVoices.map((voice, index) => (
-                          <option key={index} value={voice.voiceURI}>
-                            {voice.name} ({voice.lang}){voice.default ? ' - Default' : ''}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  ) : (
-                    <div className="text-muted ms-auto">
-                      <small>Loading voices...</small>
-                    </div>
+                  {ttsError && (
+                    <small className="text-danger">{ttsError}</small>
                   )}
                 </div>
               </div>
@@ -556,8 +463,14 @@ function App() {
             
             {/* Interactive Fire Map Card */}
             <div className="card mb-4">
-              <div className="card-header bg-success text-white">
+              <div className="card-header bg-success text-white d-flex justify-content-between align-items-center">
                 <h5 className="mb-0">Interactive Fire Map</h5>
+                <button 
+                  onClick={() => setMapView(mapView === 'satellite' ? 'street' : 'satellite')}
+                  className="btn btn-sm btn-light"
+                >
+                  {mapView === 'satellite' ? '🌍 Satellite View' : '🗺️ Street View'}
+                </button>
               </div>
               <div className="card-body" style={{ padding: 0 }}>
                 <div style={{ height: '600px', width: '100%' }}>
@@ -567,9 +480,10 @@ function App() {
                     style={{ height: '100%', width: '100%' }}
                     whenCreated={(map) => {
                       // Add fire data layer
-                      if (analysis && analysis.fire_detections && analysis.fire_detections.length > 0) {
-                        analysis.fire_detections.forEach(fire => {
-                          if (fire.latitude && fire.longitude) {
+                      if (analysis?.fire_detections?.length > 0) {
+                        const fireMarkers = analysis.fire_detections
+                          .filter(fire => fire.latitude && fire.longitude)
+                          .map(fire => {
                             const marker = L.circleMarker(
                               [fire.latitude, fire.longitude], 
                               {
@@ -593,17 +507,34 @@ function App() {
                             `;
                             
                             marker.bindPopup(popupContent);
-                            marker.addTo(map);
-                          }
-                        });
+                            return marker;
+                          });
+
+                        const fireGroup = L.layerGroup(fireMarkers).addTo(map);
+                        
+                        // Fit map to show all fire markers with some padding
+                        if (fireMarkers.length > 0) {
+                          const group = new L.featureGroup(fireMarkers);
+                          map.fitBounds(group.getBounds().pad(0.1));
+                        }
                       }
                     }}
                   >
-                    <TileLayer
-                      url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                      attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                    />
-                    {analysis && analysis.fire_detections && analysis.fire_detections.length === 0 && (
+                    {mapView === 'satellite' ? (
+                      <TileLayer
+                        url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+                        attribution='Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
+                        maxZoom={19}
+                      />
+                    ) : (
+                      <TileLayer
+                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                        maxZoom={19}
+                      />
+                    )}
+                    
+                    {analysis?.fire_detections?.length === 0 && (
                       <div className="text-center py-4">
                         <p>No fire detections found in this area.</p>
                       </div>

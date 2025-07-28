@@ -1,216 +1,236 @@
+// Enhanced WildfireDetection.js
 import React, { useState, useEffect, useCallback } from 'react';
-import { Spinner, Alert, Button } from 'react-bootstrap';
+import { Spinner, Alert, Button, Modal } from 'react-bootstrap';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import html2canvas from 'html2canvas';
-
-// Fix for default marker icons in Leaflet
-delete L.Icon.Default.prototype._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon-2x.png',
-  iconUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon.png',
-  shadowUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-shadow.png',
-});
+import 'leaflet.heat';
 
 const WildfireDetection = ({ map }) => {
   const [fireMarkers, setFireMarkers] = useState([]);
+  const [heatMapLayer, setHeatMapLayer] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [bounds, setBounds] = useState(null);
+  const [selectedFire, setSelectedFire] = useState(null);
+  const [showDetails, setShowDetails] = useState(false);
 
-  // Update bounds when map moves
+  // Fire icon based on confidence
+  const getFireIcon = (confidence) => {
+    const color = confidence > 80 ? '#ff0000' : 
+                 confidence > 60 ? '#ff6600' : 
+                 confidence > 40 ? '#ff9900' : '#ffcc00';
+    
+    return L.divIcon({
+      html: `<div style="background: ${color}" class="fire-marker"></div>`,
+      iconSize: [20, 20],
+      className: 'fire-icon'
+    });
+  };
+
+  // Fetch fire data
+  const fetchFireData = useCallback(async () => {
+    if (!bounds || !map) return;
+    
+    setIsLoading(true);
+    setError('');
+    try {
+      const center = map.getCenter();
+      const zoom = map.getZoom();
+      const radius = Math.min(500, 1000 / Math.pow(1.5, zoom - 5));
+      
+      // Prepare request data
+      const requestData = {
+        lat: center.lat,
+        lng: center.lng,
+        radius_km: radius
+      };
+      
+      console.log('Sending request with data:', requestData);
+      
+      // Make the request with JSON data
+      const response = await fetch('http://127.0.0.1:8000/api/analyze-fire-map', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestData),
+      });
+      
+      if (!response.ok) {
+        let errorText;
+        try {
+          errorText = await response.text();
+          const errorJson = JSON.parse(errorText);
+          console.error('Server response error:', response.status, errorJson);
+          throw new Error(errorJson.detail || `HTTP error! status: ${response.status}`);
+        } catch (e) {
+          console.error('Error parsing error response:', e);
+          throw new Error(`HTTP error! status: ${response.status}, body: ${errorText || 'No details'}`);
+        }
+      }
+      
+      const result = await response.json();
+      console.log('Received fire data:', result);
+      
+      // Ensure we have fire detections in the response
+      if (!result.fire_detections) {
+        console.warn('No fire_detections in response:', result);
+        setError('No fire data available for this area');
+        return;
+      }
+      
+      // Process fire detections to ensure required fields exist
+      const processedFires = result.fire_detections.map(fire => ({
+        ...fire,
+        // Ensure required fields have defaults if missing
+        latitude: fire.latitude || fire.lat || 0,
+        longitude: fire.longitude || fire.lng || 0,
+        confidence: fire.confidence || 50,
+        brightness: fire.brightness || 300,
+      }));
+      
+      console.log('Processed fire data:', processedFires);
+      updateFireMarkers(processedFires);
+      updateHeatMap(processedFires);
+      
+      // Log analysis results if available
+      if (result.analysis) {
+        console.log('Fire analysis:', result.analysis);
+      }
+      
+    } catch (err) {
+      console.error('Error in fetchFireData:', err);
+      setError('Failed to load fire data: ' + (err.message || 'Unknown error'));
+    } finally {
+      setIsLoading(false);
+    }
+  }, [bounds, map, updateFireMarkers, updateHeatMap]);
+
+  // Update markers
+  const updateFireMarkers = useCallback((fires) => {
+    if (!map) return;
+    
+    // Remove existing markers
+    fireMarkers.forEach(marker => {
+      if (map.hasLayer(marker)) {
+        map.removeLayer(marker);
+      }
+    });
+    
+    if (!fires || !Array.isArray(fires) || fires.length === 0) {
+      console.log('No fire data to display');
+      setFireMarkers([]);
+      return;
+    }
+    
+    console.log(`Creating ${fires.length} fire markers`);
+    
+    const newMarkers = fires.map((fire, index) => {
+      // Ensure we have valid coordinates
+      const lat = fire.latitude || fire.lat;
+      const lng = fire.longitude || fire.lng;
+      
+      if (typeof lat !== 'number' || typeof lng !== 'number' || isNaN(lat) || isNaN(lng)) {
+        console.warn('Invalid coordinates for fire:', fire);
+        return null;
+      }
+      
+      const confidence = fire.confidence || 50;
+      const brightness = fire.brightness || 300;
+      
+      try {
+        const marker = L.marker([lat, lng], {
+          icon: getFireIcon(confidence)
+        }).bindPopup(`
+          <div class="fire-popup">
+            <h6>🔥 Wildfire Detection</h6>
+            <p><strong>Confidence:</strong> ${confidence}%</p>
+            <p><strong>Temperature:</strong> ${brightness}°K</p>
+            ${fire.acq_date ? `<p><strong>Detected:</strong> ${new Date(fire.acq_date).toLocaleString()}</p>` : ''}
+            ${fire.frp ? `<p><strong>Fire Radiative Power:</strong> ${fire.frp} MW</p>` : ''}
+            <button class="btn btn-sm btn-primary w-100 mt-1" 
+                    onclick="window.dispatchEvent(new CustomEvent('showFireDetails', { detail: ${JSON.stringify(fire)}}))">
+              View Details
+            </button>
+          </div>
+        `).addTo(map);
+        
+        marker.on('click', () => {
+          setSelectedFire(fire);
+          setShowDetails(true);
+        });
+        
+        return marker;
+      } catch (err) {
+        console.error('Error creating marker:', err, fire);
+        return null;
+      }
+    }).filter(marker => marker !== null);
+    
+    setFireMarkers(newMarkers);
+    console.log(`Created ${newMarkers.length} fire markers`);
+  }, [map, fireMarkers]);
+
+  // Update heatmap
+  const updateHeatMap = useCallback((fires) => {
+    if (heatMapLayer) map.removeLayer(heatMapLayer);
+    if (!fires.length) return;
+    
+    const heatData = fires.map(f => [f.latitude, f.longitude, (f.confidence || 50) / 100]);
+    const heat = L.heatLayer(heatData, { radius: 25, blur: 15 }).addTo(map);
+    setHeatMapLayer(heat);
+  }, [map, heatMapLayer]);
+
+  // Effects
   useEffect(() => {
     if (!map) return;
     
     const updateBounds = () => {
-      const bounds = map.getBounds();
-      setBounds([
-        bounds.getSouthWest().lat,
-        bounds.getSouthWest().lng,
-        bounds.getNorthEast().lat,
-        bounds.getNorthEast().lng
-      ]);
+      const b = map.getBounds();
+      setBounds([b.getSouthWest().lat, b.getSouthWest().lng, 
+                 b.getNorthEast().lat, b.getNorthEast().lng]);
     };
     
     map.on('moveend', updateBounds);
-    updateBounds(); // Initial bounds
+    updateBounds();
     
-    return () => {
-      map.off('moveend', updateBounds);
-    };
+    return () => map.off('moveend', updateBounds);
   }, [map]);
 
-  // Fetch fire data when bounds change
   useEffect(() => {
-    if (!bounds || !map) return;
-    
-    const fetchFireData = async () => {
-      setIsLoading(true);
-      setError('');
-      
-      try {
-        // Calculate center point
-        const centerLat = (bounds[0] + bounds[2]) / 2;
-        const centerLng = (bounds[1] + bounds[3]) / 2;
-        
-        // Calculate approximate radius in kilometers
-        const R = 6371; // Earth's radius in km
-        const latDistance = (bounds[2] - bounds[0]) * (Math.PI / 180) * R;
-        const lngDistance = (bounds[3] - bounds[1]) * (Math.PI / 180) * R * Math.cos(centerLat * (Math.PI / 180));
-        const radiusKm = Math.ceil(Math.max(latDistance, lngDistance) / 2);
-        
-        // Call the backend API
-        const response = await fetch('http://127.0.0.1:8000/api/analyze', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            lat: centerLat,
-            lng: centerLng,
-            radius_km: radiusKm
-          })
-        });
-        
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(errorData.detail || 'Failed to fetch fire data');
-        }
-        
-        const result = await response.json();
-        
-        // Transform the response to match the expected format
-        const fireData = Array.isArray(result.fire_detections) ? result.fire_detections : [];
-        updateFireMarkers(fireData);
-        
-      } catch (err) {
-        console.error('Error fetching fire data:', err);
-        setError('Failed to load fire data. Please try again later.');
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    
-    // Add a small debounce to prevent too many API calls
     const timer = setTimeout(fetchFireData, 500);
     return () => clearTimeout(timer);
-  }, [bounds, map]);
-
-  // Update fire markers on the map
-  const updateFireMarkers = useCallback((fireData) => {
-    if (!map) return;
-    
-    // Clear existing markers
-    fireMarkers.forEach(marker => map.removeLayer(marker));
-    
-    const newMarkers = [];
-    
-    // Add new markers for each fire detection
-    fireData.forEach(fire => {
-      try {
-        const lat = parseFloat(fire.latitude);
-        const lng = parseFloat(fire.longitude);
-        
-        if (isNaN(lat) || isNaN(lng)) {
-          console.warn('Invalid coordinates:', fire);
-          return;
-        }
-        
-        // Calculate confidence from available fields
-        const confidence = parseFloat(fire.confidence || fire.confidence_level || fire.confidence_value || '50');
-        
-        const marker = L.circleMarker([lat, lng], {
-          radius: 6,
-          fillColor: getFireColor(confidence),
-          color: '#000',
-          weight: 1,
-          opacity: 1,
-          fillOpacity: 0.8
-        }).addTo(map);
-        
-        // Format date for popup
-        const dateStr = fire.acq_date ? 
-          new Date(fire.acq_date).toLocaleString() : 
-          'Date not available';
-        
-        // Add popup with fire details
-        marker.bindPopup(`
-          <div style="min-width: 200px">
-            <strong>Fire Detection</strong><br>
-            Confidence: ${Math.round(confidence)}%<br>
-            Date: ${dateStr}<br>
-            ${fire.brightness ? `Brightness: ${fire.brightness} K<br>` : ''}
-            <small>Click for details</small>
-          </div>
-        `);
-        
-        newMarkers.push(marker);
-      } catch (err) {
-        console.error('Error creating marker:', err, fire);
-      }
-    });
-    
-    setFireMarkers(newMarkers);
-  }, [map, fireMarkers]);
-
-  // Determine marker color based on confidence
-  const getFireColor = (confidence) => {
-    const value = Math.min(100, Math.max(0, confidence || 0));
-    if (value > 80) return '#ff0000';
-    if (value > 60) return '#ff6600';
-    if (value > 40) return '#ff9900';
-    return '#ffcc00';
-  };
-
-  if (!map) {
-    return (
-      <div className="alert alert-warning">
-        Map is not available. Please check the map initialization.
-      </div>
-    );
-  }
+  }, [bounds, fetchFireData]);
 
   return (
-    <div className="fire-map-container">
+    <>
       {isLoading && (
-        <div className="text-center my-3">
-          <Spinner animation="border" role="status">
-            <span className="visually-hidden">Loading fire data...</span>
-          </Spinner>
-          <p>Loading fire data...</p>
+        <div className="loading-overlay">
+          <Spinner animation="border" variant="light" />
         </div>
       )}
       
-      {error && (
-        <Alert variant="danger" className="mt-3">
-          {error}
-        </Alert>
-      )}
+      {error && <Alert variant="danger">{error}</Alert>}
       
-      <div className="legend mt-3">
-        <h5>Fire Confidence Levels</h5>
-        <div className="d-flex flex-wrap gap-3">
-          {[
-            { color: '#ff0000', label: 'High (80-100%)' },
-            { color: '#ff6600', label: 'Medium-High (60-80%)' },
-            { color: '#ff9900', label: 'Medium (40-60%)' },
-            { color: '#ffcc00', label: 'Low (0-40%)' }
-          ].map((item, index) => (
-            <div key={index} className="d-flex align-items-center">
-              <div style={{
-                width: '15px',
-                height: '15px',
-                backgroundColor: item.color,
-                marginRight: '5px',
-                borderRadius: '50%',
-                border: '1px solid #000'
-              }}></div>
-              <span>{item.label}</span>
+      <Modal show={showDetails} onHide={() => setShowDetails(false)}>
+        <Modal.Header closeButton>
+          <Modal.Title>Fire Details</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          {selectedFire && (
+            <div>
+              <p><strong>Confidence:</strong> {selectedFire.confidence}%</p>
+              {selectedFire.brightness && (
+                <p><strong>Temperature:</strong> {selectedFire.brightness}°K</p>
+              )}
+              {selectedFire.acq_date && (
+                <p><strong>Detected:</strong> {new Date(selectedFire.acq_date).toLocaleString()}</p>
+              )}
             </div>
-          ))}
-        </div>
-      </div>
-    </div>
+          )}
+        </Modal.Body>
+      </Modal>
+    </>
   );
 };
 
