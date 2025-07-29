@@ -9,18 +9,6 @@
 @keyframes gradientBG {
   0% {
     background-position: 0% 50%;
-  }
-  50% {
-    background-position: 100% 50%;
-  }
-  100% {
-    background-position: 0% 50%;
-  }
-}
-
-@keyframes gradientBG {
-  0% {
-    background-position: 0% 50%;
     opacity: 0.8;
   }
   50% {
@@ -69,77 +57,19 @@
   z-index: 2;
 }
 
+/* Hero overlay - using the most specific version with background image */
 .hero-overlay {
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.4);
-  z-index: 3;
-}
-
-.hero-content {
-  position: relative;
-  z-index: 2;
-  max-width: 900px;
-  margin: 0 auto;
-  padding: 2rem;
-}
-
-.hero h1 {
-  font-size: 3.5rem;
-  font-weight: 800;
-  margin: 0 0 1rem 0;
-  color: white;
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-  letter-spacing: -0.05em;
-}
-
-.hero h2 {
-  font-size: 1.5rem;
-  font-weight: 500;
-  margin: 0 0 1.5rem 0;
-  opacity: 0.95;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
-}
-
-.tagline {
-  font-size: 1.25rem;
-  margin-bottom: 2rem;
-  font-weight: 500;
-  opacity: 0.9;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
-}
-
-.disclaimer {
-  max-width: 800px;
-  margin: 2rem auto 0;
-  padding: 1.25rem;
-  background: rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(8px);
-  border-radius: 12px;
-  font-size: 1rem;
-  line-height: 1.6;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.hero-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: linear-gradient(
-    to bottom,
-    rgba(0, 0, 0, 0.3) 0%,
-    rgba(0, 0, 0, 0.1) 50%,
-    rgba(0, 0, 0, 0.3) 100%
-  );
+  background: url('https://images.unsplash.com/photo-1500382017468-9049fed747ef?ixlib=rb-4.0.3&auto=format&fit=crop&w=1932&q=80') center/cover;
+  opacity: 0.15;
   z-index: 1;
 }
 
+/* Hero content */
 .hero-content {
   position: relative;
   z-index: 2;
@@ -148,6 +78,7 @@
   padding: 2rem;
 }
 
+/* Hero typography */
 .hero h1 {
   font-size: 4rem;
   font-weight: 800;
@@ -156,6 +87,14 @@
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   letter-spacing: -0.05em;
   line-height: 1.1;
+  transition: font-size 0.3s ease;
+}
+
+@media (max-width: 600px) {
+  .hero h1 {
+    font-size: 2.5rem;
+    text-align: center;
+  }
 }
 
 .hero h2 {
@@ -167,36 +106,30 @@
   line-height: 1.4;
 }
 
-.hero .tagline {
+/* Tagline - using the more specific .hero .tagline version */
+.tagline {
   font-size: 1.5rem;
   font-weight: 600;
   color: #93c5fd;
   margin-bottom: 2rem;
   text-transform: uppercase;
   letter-spacing: 0.1em;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
 }
 
-.hero .disclaimer {
+/* Disclaimer - using the more specific .hero .disclaimer version */
+.disclaimer {
   max-width: 700px;
   margin: 0 auto;
+  padding: 1.5rem;
+  background: rgba(0, 0, 0, 0.2);
+  backdrop-filter: blur(5px);
+  border-radius: 12px;
   font-size: 1.1rem;
   line-height: 1.7;
   color: rgba(255, 255, 255, 0.9);
-  background: rgba(0, 0, 0, 0.2);
-  padding: 1.5rem;
-  border-radius: 12px;
-  backdrop-filter: blur(5px);
-}
-
-.hero-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: url('https://images.unsplash.com/photo-1500382017468-9049fed747ef?ixlib=rb-4.0.3&auto=format&fit=crop&w=1932&q=80') center/cover;
-  opacity: 0.15;
-  z-index: 1;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 h1 {
@@ -1459,5 +1392,90 @@ button, .audio-recorder-btn {
     height: 26px;
     line-height: 26px;
     font-size: 16px;
+  }
+}
+
+/* Input form container */
+.card > div > div {
+  display: flex;
+  flex-direction: column;
+  gap: 1em;
+  padding: 0.5em 1em 1em;
+  box-sizing: border-box;
+}
+
+/* Input field container */
+.card > div > div > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3em;
+  width: 100%;
+}
+
+/* Labels */
+.card label {
+  font-size: 0.9em;
+  color: #555;
+  font-weight: 500;
+}
+
+/* Input fields */
+.card input[type="number"] {
+  width: 100%;
+  max-width: 100%;
+  padding: 0.7em;
+  font-size: 1em;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  box-sizing: border-box;
+  background-color: #fff;
+}
+
+/* Button */
+.card button {
+  width: 100%;
+  padding: 0.8em;
+  font-size: 1em;
+  background-color: #0078D4;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  margin-top: 0.5em;
+  transition: background-color 0.2s;
+}
+
+.card button:hover {
+  background-color: #005ea2;
+}
+
+/* Responsive adjustments */
+@media (min-width: 480px) {
+  .card > div > div {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 1em 1.5em;
+  }
+  
+  .card > div > div > div {
+    flex: 1 1 calc(50% - 1.5em);
+    min-width: 0;
+  }
+  
+  .card button {
+    flex: 1 1 100%;
+    margin-top: 0;
+  }
+}
+
+/* For very small screens */
+@media (max-width: 360px) {
+  .card > div > div {
+    padding: 0.5em 0.75em 0.75em;
+  }
+  
+  .card input[type="number"] {
+    padding: 0.6em;
+    font-size: 0.95em;
   }
 }
