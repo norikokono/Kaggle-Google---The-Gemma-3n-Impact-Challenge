@@ -1,4 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { ToastContainer, toast } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 import './App.css';
 import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -71,7 +73,13 @@ function MovableMap({ coords, setCoords, onMapCreated }) {
   return (
     <MapContainer
       center={mapCenter}
-      zoom={8}
+      zoom={4}
+      minZoom={3}
+      maxBounds={[
+        [5.499550, -167.276413], // Southwest coordinates (southern Mexico, western Alaska)
+        [83.162102, -52.233040]   // Northeast coordinates (northern Canada, eastern Canada)
+      ]}
+      maxBoundsViscosity={1.0}
       style={{ height: '100%', width: '100%', borderRadius: 12 }}
       whenCreated={mapInstance => {
         mapRef.current = mapInstance;
@@ -124,7 +132,7 @@ function LocationDisplay({ coords }) {
 }
 
 function App() {
-  const [coords, setCoords] = useState([37.7749, -122.4194]); // Default: San Francisco
+  const [coords, setCoords] = useState([48.1667, -100.1667]); // Default: Center of North America
   const [searchText, setSearchText] = useState('');
   const [analysis, setAnalysis] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -362,7 +370,7 @@ function App() {
           <h2>Wildfire Detection & Crisis Response Across North America</h2>
           <p className="tagline">AI-Powered Early Warning System</p>
           <p className="disclaimer">
-            This is a submission for the Google Gemma 3n Impact Challenge. Our mission is to combat the growing threat of wildfires through advanced AI technology, providing timely detection and response solutions to protect communities and ecosystems.
+            This is a submission for the Google Gemma 3n Impact Challenge on Kaggle Competition. Our mission is to combat the growing threat of wildfires through advanced AI technology, providing timely detection and response solutions to protect communities and ecosystems.
           </p>
         </div>
       </header>

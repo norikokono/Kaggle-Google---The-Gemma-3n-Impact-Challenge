@@ -5,6 +5,19 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import 'leaflet.heat';
 
+// North America bounding box (minLat, minLng, maxLat, maxLng)
+const NORTH_AMERICA_BOUNDS = [5.499550, -167.276413, 83.162102, -52.233040];
+
+// Check if coordinates are within North America
+const isInNorthAmerica = (lat, lng) => {
+  return (
+    lat >= NORTH_AMERICA_BOUNDS[0] && 
+    lng >= NORTH_AMERICA_BOUNDS[1] && 
+    lat <= NORTH_AMERICA_BOUNDS[2] && 
+    lng <= NORTH_AMERICA_BOUNDS[3]
+  );
+};
+
 const WildfireDetection = ({ map }) => {
   const [fireMarkers, setFireMarkers] = useState([]);
   const [heatMapLayer, setHeatMapLayer] = useState(null);
@@ -79,15 +92,24 @@ const WildfireDetection = ({ map }) => {
         return;
       }
       
-      // Process fire detections to ensure required fields exist
-      const processedFires = result.fire_detections.map(fire => ({
-        ...fire,
-        // Ensure required fields have defaults if missing
-        latitude: fire.latitude || fire.lat || 0,
-        longitude: fire.longitude || fire.lng || 0,
-        confidence: fire.confidence || 50,
-        brightness: fire.brightness || 300,
-      }));
+      // Process fire detections to ensure required fields exist and filter to North America
+      const processedFires = result.fire_detections
+        .map(fire => ({
+          ...fire,
+          // Ensure required fields have defaults if missing
+          latitude: fire.latitude || fire.lat || 0,
+          longitude: fire.longitude || fire.lng || 0,
+          confidence: fire.confidence || 50,
+          brightness: fire.brightness || 300,
+        }))
+        // Filter to only include fires within North America
+        .filter(fire => {
+          const inBounds = isInNorthAmerica(fire.latitude, fire.longitude);
+          if (!inBounds) {
+            console.log('Filtered out fire outside North America:', fire);
+          }
+          return inBounds;
+        });
       
       console.log('Processed fire data:', processedFires);
       updateFireMarkers(processedFires);
