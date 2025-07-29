@@ -353,9 +353,18 @@ function App() {
 
   return (
     <div className="App">
-      <header className="App-header">
-        <h1>WildGuard: Wildfire Detection & Crisis Response Accross North America</h1>
-        <p>Powered by Google Gemma 3n</p>
+      <header className="hero">
+        <div className="hero-background"></div>
+        <div className="hero-gradient"></div>
+        <div className="hero-overlay"></div>
+        <div className="hero-content">
+          <h1>WildGuard</h1>
+          <h2>Wildfire Detection & Crisis Response Across North America</h2>
+          <p className="tagline">AI-Powered Early Warning System</p>
+          <p className="disclaimer">
+            This is a submission for the Google Gemma 3n Impact Challenge. Our mission is to combat the growing threat of wildfires through advanced AI technology, providing timely detection and response solutions to protect communities and ecosystems.
+          </p>
+        </div>
       </header>
       <main>
         <div className="search-row">
@@ -386,7 +395,7 @@ function App() {
           />
         </div>
         <div className="card" style={{ width: '100%', maxWidth: '100%', height: '500px', marginBottom: '16px', position: 'relative' }}>
-          <div style={{ position: 'absolute', top: '10px', left: '10px', zIndex: 1000, background: 'white', padding: '5px', borderRadius: '4px', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
+          <div className="map-location-display">
             <LocationDisplay coords={coords} />
           </div>
           <MovableMap 
@@ -421,12 +430,101 @@ function App() {
         </div>
         {loading && <div className="card">Analyzing wildfire risk...</div>}
         {analysis && analysis.analysis && (
-          <div className="card MarkdownReport" style={{paddingTop:0}}>
+          <div className="card MarkdownReport" style={{padding: 0, overflow: 'hidden'}}>
             <div className="report-header">
-              <span className="report-icon" role="img" aria-label="tree">🌲</span>
-              <span className="report-title">WILDFIRE SITUATION REPORT</span>
+              <div className="report-header-content">
+                <span className="report-icon" role="img" aria-label="fire">🔥</span>
+                <div>
+                  <h2 className="report-title">WILDFIRE SITUATION REPORT</h2>
+                  <div className="report-subtitle">
+                    <span className="report-location">
+                      <LocationDisplay coords={coords} />
+                    </span>
+                    <span className="report-date">
+                      {new Date().toLocaleDateString('en-US', { 
+                        year: 'numeric', 
+                        month: 'long', 
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      })}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <div className="report-risk-level">
+                <span className={`risk-badge ${analysis.risk_level?.toLowerCase() || 'moderate'}`}>
+                  {analysis.risk_level || 'Risk Level'}
+                </span>
+              </div>
             </div>
-            <MarkdownReport text={analysis.analysis} />
+            
+            <div className="report-content">
+              <div className="report-metrics">
+                <div className="metric-card">
+                  <div className="metric-value">{analysis.fire_count || 'N/A'}</div>
+                  <div className="metric-label">Active Fires</div>
+                </div>
+                <div className="metric-card">
+                  <div className="metric-value">{analysis.confidence ? `${analysis.confidence}%` : 'N/A'}</div>
+                  <div className="metric-label">Detection Confidence</div>
+                </div>
+                <div className="metric-card">
+                  <div className="metric-value">{analysis.last_updated || 'N/A'}</div>
+                  <div className="metric-label">Last Updated</div>
+                </div>
+              </div>
+              
+              <div className="report-details">
+                <h3>Analysis Summary</h3>
+                <div className="analysis-text">
+                  <MarkdownReport text={analysis.analysis} />
+                </div>
+                
+                {analysis.recommendations && (
+                  <div className="recommendations">
+                    <h4>Recommended Actions</h4>
+                    <ul>
+                      {Array.isArray(analysis.recommendations) 
+                        ? analysis.recommendations.map((rec, i) => (
+                            <li key={i}><MarkdownReport text={rec} /></li>
+                          ))
+                        : <li><MarkdownReport text={analysis.recommendations} /></li>
+                      }
+                    </ul>
+                  </div>
+                )}
+                
+                {analysis.evacuation_plan && (
+                  <div className="evacuation-plan">
+                    <h4>Evacuation Information</h4>
+                    <div className="evacuation-content">
+                      {analysis.evacuation_plan.instructions && (
+                        <div className="evacuation-instructions">
+                          <h5>Instructions</h5>
+                          <MarkdownReport text={analysis.evacuation_plan.instructions} />
+                        </div>
+                      )}
+                      {analysis.evacuation_plan.routes && (
+                        <div className="evacuation-routes">
+                          <h5>Evacuation Routes</h5>
+                          <MarkdownReport text={analysis.evacuation_plan.routes} />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+            
+            <div className="report-footer">
+              <div className="data-source">
+                Data Source: NASA FIRMS • Confidence: {analysis.confidence || 'N/A'}%
+              </div>
+              <div className="report-timestamp">
+                Generated: {new Date().toISOString().replace('T', ' ').substring(0, 19)} UTC
+              </div>
+            </div>
           </div>
         )}
         {analysis && (
@@ -446,9 +544,9 @@ function App() {
                     title={isSpeaking ? 'Stop reading' : 'Listen to report'}
                   >
                     {isSpeaking ? (
-                      <i className="bi bi-stop-fill"></i>
+                      <span role="img" aria-label="stop">⏹️</span>
                     ) : (
-                      <i className="bi bi-volume-up"></i>
+                      <span role="img" aria-label="speaker">🔊</span>
                     )}
                   </button>
                   {ttsError && (
