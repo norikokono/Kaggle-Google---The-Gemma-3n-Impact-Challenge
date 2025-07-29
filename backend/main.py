@@ -1012,75 +1012,82 @@ async def analyze_fire_map(
     to provide a comprehensive fire analysis for the specified location.
     """
     try:
-        # Log the received request data
         logger.info(f"Received request data: {request_data}")
-        
-        # Extract values from the request
         lat = request_data.lat
         lng = request_data.lng
         radius_km = request_data.radius_km
-        
-        # Generate a unique ID for this analysis
         analysis_id = str(uuid.uuid4())
-        
-        # Calculate bounding box for fire data
         extent = calculate_bounding_box(lat, lng, radius_km)
         
-        # Fetch fire data from FIRMS API
-        fire_data = await fetch_firms_fire_data(extent, days=3)  # Last 3 days of data
-        
-        # Log the number of fire detections
+        # Fetch and process fire data
+        fire_data = await fetch_firms_fire_data(extent, days=3)
         fire_detections = fire_data if isinstance(fire_data, list) else []
         logger.info(f"Retrieved {len(fire_detections)} fire detections from FIRMS")
         
-        # Prepare analysis prompt
+        # Generate and process analysis
         analysis_prompt = await generate_analysis_prompt(Coordinates(lat=lat, lng=lng), fire_data)
-        
-        # Generate analysis using the AI model
-        logger.info("Sending data to WildGuard AI for analysis...")
         analysis_result = await wildguard_ai.generate_analysis(analysis_prompt)
         
-        # Process the analysis to extract structured data
-        processed_analysis = {
-            "summary": analysis_result.get("analysis", "No analysis available"),
-            "risk_level": analysis_result.get("risk_level", "unknown"),
-            "confidence": analysis_result.get("confidence", 0.0),
-            "recommendations": analysis_result.get("recommendations", [])
-        }
+        # Process analysis results with proper defaults
+        confidence = float(analysis_result.get("confidence", 0.0))
+        risk_level = analysis_result.get("risk_level", "unknown").lower()
+        confidence = max(0, min(100, confidence))  # Ensure confidence is 0-100
         
-        # Generate a map with the fire data
-        map_html_path = await generate_fire_map(fire_detections, lat, lng, radius_km, analysis_id)
+        # Generate map and get URLs
+        map_html_path = await generate_fire_map(
+            fire_detections,
+            lat,
+            lng,
+            radius_km,
+            analysis_id
+        )
         
         # Get base URL for generating absolute URLs
-        base_url = "http://localhost:8000"  # Default fallback
+        base_url = "http://localhost:8000"
         if request:
             request_scope = request.scope
             scheme = request_scope.get('scheme', 'http')
             server_host = request_scope.get('server', ('localhost', 8000))[0]
             server_port = request_scope.get('server', ('localhost', 8000))[1]
             base_url = f"{scheme}://{server_host}"
-            if server_port not in (80, 443):  # Only add port if it's not standard
+            if server_port not in (80, 443):
                 base_url += f":{server_port}"
         
         map_image_url = f"{base_url}/api/image/{analysis_id}"
         map_html_url = f"{base_url}/map/{analysis_id}"
+        timestamp = datetime.now(timezone.utc).isoformat()
         
-        # Return the analysis results
-        return {
+        # Prepare response with all required fields
+        response_data = {
             "status": "success",
             "analysis_id": analysis_id,
             "fire_detections": fire_detections,
-            "analysis": processed_analysis,
+            "analysis": {
+                "summary": analysis_result.get("analysis", "No analysis available"),
+                "confidence": confidence,
+                "recommendations": analysis_result.get("recommendations", [])
+            },
+            "risk_level": risk_level,  # Moved to top level
+            "confidence": confidence,  # Top level for backward compatibility
+            "fire_count": len(fire_detections),  # Top level for backward compatibility
             "map_url": map_image_url,
             "map_html": map_html_url,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": timestamp,
+            "last_updated": timestamp,  # For backward compatibility
             "metadata": {
                 "location": {"lat": lat, "lng": lng},
                 "radius_km": radius_km,
                 "detection_count": len(fire_detections),
                 "data_source": "NASA FIRMS"
-            }
+            },
+            # Add top-level fields for backward compatibility
+            "fire_count": len(fire_detections),
+            "confidence": confidence,
+            "risk_level": risk_level,
+            "last_updated": timestamp
         }
+        
+        return response_data
         
     except Exception as e:
         logger.error(f"Error in analyze_fire_map: {str(e)}", exc_info=True)
@@ -1197,18 +1204,29 @@ async def analyze_wildfire(
                     'Follow local emergency services for updates.'
                 ]
             
-            # Prepare response data with analysis as a string
+            # Prepare response with all required fields
             response_data = {
                 "status": "success",
-                "analysis": analysis_text,  # This is now a string
-                "risk_level": calculate_risk_level(fire_data),
-                "confidence": calculate_confidence(fire_data),
-                "recommendations": recommendations,
-                "source": "online",
-                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "analysis_id": analysis_id,
-                "image_id": None,  # Will be set below if needed
-                "evacuation_plan": None  # Default to None as it's optional
+                "fire_detections": fire_data.get('data', []),
+                "analysis": {
+                    "summary": analysis_text,
+                    "confidence": float(analysis.get("confidence", 0.0)),
+                    "recommendations": recommendations
+                },
+                "risk_level": calculate_risk_level(fire_data),
+                "confidence": float(analysis.get("confidence", 0.0)),
+                "fire_count": len(fire_data.get('data', [])),
+                "map_url": None,
+                "map_html": None,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "last_updated": datetime.now(timezone.utc).isoformat(),
+                "metadata": {
+                    "location": {"lat": lat, "lng": lng},
+                    "radius_km": radius_km,
+                    "detection_count": len(fire_data.get('data', [])),
+                    "data_source": "NASA FIRMS"
+                }
             }
             
             # Generate image in background if requested and we have fire data
@@ -1232,7 +1250,8 @@ async def analyze_wildfire(
                         asyncio.create_task,
                         generate_map_wrapper()
                     )
-                    response_data["image_id"] = analysis_id
+                    response_data["map_url"] = f"http://localhost:8000/api/image/{analysis_id}"
+                    response_data["map_html"] = f"http://localhost:8000/map/{analysis_id}"
                     logger.info(f"Analysis {analysis_id}: Started background task to generate fire map")
                 except Exception as e:
                     logger.error(f"Analysis {analysis_id}: Failed to start background task: {str(e)}", exc_info=True)

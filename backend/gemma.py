@@ -94,7 +94,14 @@ class WildGuardAI:
             "status": "offline_limited",
             "message": error_msg or "Running in offline mode with limited capabilities",
             "analysis": "Detailed analysis requires an internet connection. Basic features are available offline.",
-            "source": "offline_fallback"
+            "source": "offline_fallback",
+            "confidence": 0.0,
+            "risk_level": "unknown",
+            "recommendations": [
+                "Enable internet connection for full analysis capabilities.",
+                "Check your network settings and try again.",
+                "Basic fire detection is still available offline."
+            ]
         }
 
 # Singleton instance

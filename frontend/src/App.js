@@ -9,7 +9,6 @@ import markerIcon from 'leaflet/dist/images/marker-icon.png';
 import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
 import markerShadow from 'leaflet/dist/images/marker-shadow.png';
 import MarkdownReport from './MarkdownReport';
-import ImageWithPlaceholder from './ImageWithPlaceholder';
 import AudioRecorder from './AudioRecorder';
 import WildfireDetection from './components/WildfireDetection';
 
@@ -134,7 +133,16 @@ function LocationDisplay({ coords }) {
 function App() {
   const [coords, setCoords] = useState([48.1667, -100.1667]); // Default: Center of North America
   const [searchText, setSearchText] = useState('');
-  const [analysis, setAnalysis] = useState(null);
+  const [analysis, setAnalysis] = useState({
+    fire_detections: [],
+    fire_count: 0,
+    analysis: { confidence: 0 },
+    confidence: 0,
+    timestamp: null,
+    last_updated: null,
+    risk_level: 'Unknown',
+    error: null
+  });
   const [loading, setLoading] = useState(false);
   const [voiceActive, setVoiceActive] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
@@ -265,13 +273,25 @@ function App() {
   // Fetch AI analysis
   const fetchAnalysis = async (locationText = null) => {
     setLoading(true);
-    setAnalysis(null);
+    setAnalysis({
+      fire_detections: [],
+      fire_count: 0,
+      analysis: { confidence: 0 },
+      confidence: 0,
+      timestamp: null,
+      last_updated: null,
+      risk_level: 'Unknown',
+      error: null
+    });
+    
     try {
       const requestData = {
         lat: coords[0],
         lng: coords[1],
         radius_km: 50
       };
+      
+      console.log('Sending request to API with data:', requestData);
       
       const response = await fetch('http://127.0.0.1:8000/api/analyze-fire-map', {
         method: 'POST',
@@ -283,16 +303,51 @@ function App() {
       
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+        const errorMessage = errorData.detail || `HTTP error! status: ${response.status}`;
+        console.error('API Error:', errorMessage);
+        throw new Error(errorMessage);
       }
       
       const data = await response.json();
-      setAnalysis(data);
+      console.log('API Response:', data);
+      
+      // Process the response to ensure it has the expected structure
+      const processedData = {
+        fire_detections: data.fire_detections || [],
+        fire_count: data.fire_count || data.fire_detections?.length || 0,
+        analysis: {
+          confidence: data.confidence || data.analysis?.confidence || 0,
+          summary: data.analysis?.summary || '',
+          recommendations: data.analysis?.recommendations || []
+        },
+        confidence: data.confidence || data.analysis?.confidence || 0,
+        timestamp: data.timestamp || data.last_updated || new Date().toISOString(),
+        last_updated: data.last_updated || data.timestamp || new Date().toISOString(),
+        risk_level: data.risk_level || 'Unknown',
+        map_url: data.map_url,
+        map_html: data.map_html,
+        ...data // Include any additional fields from the response
+      };
+      
+      console.log('Processed analysis data:', processedData);
+      setAnalysis(processedData);
+      
     } catch (err) {
-      console.error('Error fetching analysis:', err);
-      setAnalysis({ 
+      console.error('Error in fetchAnalysis:', err);
+      setAnalysis(prev => ({
+        ...prev,
         error: `Failed to fetch analysis: ${err.message}`,
         details: process.env.NODE_ENV === 'development' ? err.stack : undefined
+      }));
+      
+      // Show error toast to user
+      toast.error(`Error: ${err.message}`, {
+        position: "top-right",
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true
       });
     } finally {
       setLoading(false);
@@ -470,15 +525,22 @@ function App() {
             <div className="report-content">
               <div className="report-metrics">
                 <div className="metric-card">
-                  <div className="metric-value">{analysis.fire_count || 'N/A'}</div>
+                  <div className="metric-value">
+                    {analysis.fire_count || analysis.fire_detections?.length || 'N/A'}
+                  </div>
                   <div className="metric-label">Active Fires</div>
                 </div>
                 <div className="metric-card">
-                  <div className="metric-value">{analysis.confidence ? `${analysis.confidence}%` : 'N/A'}</div>
+                  <div className="metric-value">
+                    {analysis.confidence !== undefined ? `${Math.round(analysis.confidence)}%` : 'N/A'}
+                  </div>
                   <div className="metric-label">Detection Confidence</div>
                 </div>
                 <div className="metric-card">
-                  <div className="metric-value">{analysis.last_updated || 'N/A'}</div>
+                  <div className="metric-value">
+                    {analysis.timestamp || analysis.last_updated ? 
+                      new Date(analysis.timestamp || analysis.last_updated).toLocaleString() : 'N/A'}
+                  </div>
                   <div className="metric-label">Last Updated</div>
                 </div>
               </div>
@@ -527,7 +589,7 @@ function App() {
             
             <div className="report-footer">
               <div className="data-source">
-                Data Source: NASA FIRMS • Confidence: {analysis.confidence || 'N/A'}%
+                Data Source: NASA FIRMS • Confidence: {analysis.analysis?.confidence || 'N/A'}%
               </div>
               <div className="report-timestamp">
                 Generated: {new Date().toISOString().replace('T', ' ').substring(0, 19)} UTC

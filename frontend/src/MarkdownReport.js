@@ -33,38 +33,142 @@ export default function MarkdownReport({ text }) {
 
   const lines = content.split(/\r?\n/);
   const elements = [];
-  let currentList = null;
   
-  lines.forEach((line, i) => {
-    // Headings
-    if (/^###\s+/.test(line)) {
-      if (currentList) { elements.push(<ul key={i+'ul'}>{currentList}</ul>); currentList = null; }
-      elements.push(<h4 key={i+'h4'} style={{marginBottom:4,marginTop:18}}>{line.replace(/^###\s+/, '')}</h4>);
-    } else if (/^##\s+/.test(line)) {
-      if (currentList) { elements.push(<ul key={i+'ul'}>{currentList}</ul>); currentList = null; }
-      elements.push(<h3 key={i+'h3'} style={{marginBottom:8,marginTop:24}}>{line.replace(/^##\s+/, '')}</h3>);
-    } else if (/^#\s+/.test(line)) {
-      if (currentList) { elements.push(<ul key={i+'ul'}>{currentList}</ul>); currentList = null; }
-      elements.push(<h2 key={i+'h2'} style={{marginBottom:10,marginTop:32}}>{line.replace(/^#\s+/, '')}</h2>);
+  // Function to parse list items with indentation
+  const parseListItems = (startIdx, baseIndent = null) => {
+    const items = [];
+    let i = startIdx;
+    
+    while (i < lines.length) {
+      const line = lines[i];
+      const match = line.match(/^(\s*)[-*]\s*(.*)/);
+      
+      // If we hit a non-list item, stop processing
+      if (!match) {
+        // If we're at the root level, stop completely
+        if (baseIndent === null) break;
+        // If we're in a nested list, check if this line is part of a paragraph continuation
+        const isContinuation = line.trim() !== '' && line.match(/^\s{2,}/);
+        if (!isContinuation) break;
+      }
+      
+      if (match) {
+        const [_, lineIndent, content] = match;
+        const currentIndent = lineIndent.length;
+        
+        // If this is the first item, set the base indentation
+        const currentBaseIndent = baseIndent !== null ? baseIndent : currentIndent;
+        
+        // If indentation is less than base, we're done with this list
+        if (currentIndent < currentBaseIndent) break;
+        
+        // If this is a new item at the current level
+        if (currentIndent === currentBaseIndent) {
+          items.push({
+            content: content.trim(),
+            children: [],
+            key: i
+          });
+          i++;
+        } 
+        // If this is a nested list
+        else if (currentIndent > currentBaseIndent) {
+          // Process the nested list
+          const nestedItems = parseListItems(i, currentIndent);
+          if (items.length > 0) {
+            // Attach nested items to the last item at this level
+            items[items.length - 1].children = nestedItems.items;
+          }
+          i = nestedItems.nextIndex;
+        }
+      } else {
+        // Handle paragraph continuations (lines that are indented under a list item)
+        if (items.length > 0) {
+          const lastItem = items[items.length - 1];
+          lastItem.content = (lastItem.content + ' ' + line.trim()).trim();
+        }
+        i++;
+      }
     }
-    // Unordered list (supports both - and * for bullet points)
-    else if (/^[-*]\s+/.test(line)) {
-      if (!currentList) currentList = [];
-      currentList.push(<li key={i+'li'}>{renderInline(line.replace(/^[-*]\s+/, ''))}</li>);
+    
+    return { items, nextIndex: i };
+  };
+  
+  // Function to render list items recursively
+  const renderListItems = (items, level = 0) => {
+    return items.map((item, idx) => {
+      // Check if the content contains line breaks (for multi-line list items)
+      const contentParts = item.content.split('\n');
+      const firstLine = contentParts[0];
+      const remainingLines = contentParts.slice(1);
+      
+      return (
+        <li key={item.key || idx} style={{ marginBottom: '0.5em' }}>
+          {renderInline(firstLine)}
+          {remainingLines.length > 0 && (
+            <div style={{ marginTop: '0.5em', marginLeft: '1.5em' }}>
+              {remainingLines.map((line, i) => (
+                <div key={i}>{renderInline(line)}</div>
+              ))}
+            </div>
+          )}
+          {item.children && item.children.length > 0 && (
+            <ul style={{ 
+              marginTop: '0.5em', 
+              marginBottom: '0.5em', 
+              paddingLeft: '1.5em',
+              listStyleType: 'disc'
+            }}>
+              {renderListItems(item.children, level + 1)}
+            </ul>
+          )}
+        </li>
+      );
+    });
+  };
+  
+  // Main parsing loop
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    
+    // Skip empty lines
+    if (line.trim() === '') {
+      i++;
+      continue;
+    }
+    
+    // Check for list items
+    if (/^\s*[-*]\s*/.test(line)) {
+      const { items, nextIndex } = parseListItems(i);
+      elements.push(
+        <ul key={`list-${i}`} style={{ margin: '0.5em 0', paddingLeft: '1.5em' }}>
+          {renderListItems(items)}
+        </ul>
+      );
+      i = nextIndex;
+      continue;
+    }
+    
+    // Headers
+    if (/^###\s+/.test(line)) {
+      elements.push(<h4 key={i} style={{marginBottom:4,marginTop:18}}>{line.replace(/^###\s+/, '')}</h4>);
+    } else if (/^##\s+/.test(line)) {
+      elements.push(<h3 key={i} style={{marginBottom:8,marginTop:24}}>{line.replace(/^##\s+/, '')}</h3>);
+    } else if (/^#\s+/.test(line)) {
+      elements.push(<h2 key={i} style={{marginBottom:10,marginTop:32}}>{line.replace(/^#\s+/, '')}</h2>);
     }
     // Horizontal rule
     else if (line.trim() === '---') {
-      if (currentList) { elements.push(<ul key={i+'ul'}>{currentList}</ul>); currentList = null; }
-      elements.push(<hr key={i+'hr'} />);
+      elements.push(<hr key={i} />);
     }
-    // Paragraph or inline
-    else if (line.trim() !== '') {
-      if (currentList) { elements.push(<ul key={i+'ul'}>{currentList}</ul>); currentList = null; }
-      elements.push(<p key={i+'p'} style={{marginBottom:8}}>{renderInline(line)}</p>);
+    // Paragraph
+    else {
+      elements.push(<p key={i} style={{marginBottom:8}}>{renderInline(line)}</p>);
     }
-  });
-  
-  if (currentList) elements.push(<ul key={'endul'}>{currentList}</ul>);
+    
+    i++;
+  }
   
   return (
     <div 
@@ -83,17 +187,44 @@ export default function MarkdownReport({ text }) {
   );
 }
 
-// Helper for inline formatting (bold)
+// Helper for inline formatting (bold and other markdown)
 function renderInline(text) {
   if (typeof text !== 'string') return text;
   
-  // Split by ** but keep the delimiters
-  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  // Handle bold text with **** or **
+  const parts = [];
+  let remaining = text;
+  let lastIndex = 0;
   
-  return parts.map((part, i) => {
-    if (part.startsWith('**') && part.endsWith('**')) {
-      return <strong key={i}>{part.slice(2, -2)}</strong>;
+  // This regex matches either ****text**** or **text**
+  const boldRegex = /(\*{2,4})([^*]+?)\1/g;
+  let match;
+  
+  while ((match = boldRegex.exec(text)) !== null) {
+    const [fullMatch, delimiter, content] = match;
+    const startIndex = match.index;
+    
+    // Add text before the match
+    if (startIndex > lastIndex) {
+      parts.push(text.substring(lastIndex, startIndex));
     }
-    return part;
-  });
+    
+    // Add the bold content
+    parts.push(<strong key={startIndex}>{content}</strong>);
+    
+    lastIndex = startIndex + fullMatch.length;
+  }
+  
+  // Add any remaining text after the last match
+  if (lastIndex < text.length) {
+    parts.push(text.substring(lastIndex));
+  }
+  
+  // If no matches were found, return the original text
+  if (parts.length === 0) {
+    return text;
+  }
+  
+  // Return the array of parts (strings and React elements)
+  return <>{parts}</>;
 }
