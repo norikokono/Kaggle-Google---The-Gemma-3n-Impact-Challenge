@@ -84,3 +84,5 @@ frontend/.next/
 frontend/.cache/
 
 uploads/
+
+.runtimeconfig.json

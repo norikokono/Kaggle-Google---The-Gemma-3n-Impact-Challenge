@@ -277,7 +277,13 @@ function App() {
       
       console.log('Sending request to API with data:', requestData);
       
-      const response = await fetch('http://127.0.0.1:8000/api/analyze-fire-map', {
+      // Use the Firebase Functions URL in production, fallback to localhost in development
+      const apiUrl = process.env.NODE_ENV === 'production'
+        ? 'https://us-central1-wildguard-hackathon-2025.cloudfunctions.net/analyzeFireMap'
+        : 'http://127.0.0.1:5001/wildguard-hackathon-2025/us-central1/analyzeFireMap';
+      
+      console.log('Using API URL:', apiUrl);
+      const response = await fetch(apiUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

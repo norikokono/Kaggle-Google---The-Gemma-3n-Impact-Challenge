@@ -15,16 +15,18 @@
   },
   "functions": [
     {
-      "source": "functions",
+      "source": "backend-functions",
       "codebase": "default",
       "ignore": [
         "venv",
         ".git",
         "firebase-debug.log",
         "firebase-debug.*.log",
-        "*.local"
+        "*.local",
+        "__pycache__",
+        "*.pyc"
       ],
-      "runtime": "python313"
+      "runtime": "python311"
     }
   ]
 }
