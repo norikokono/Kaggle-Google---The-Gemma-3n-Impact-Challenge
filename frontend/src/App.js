@@ -459,38 +459,137 @@ function App() {
             disabled={!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) || loading}
           />
         </div>
-        <div className="card" style={{ width: '100%', maxWidth: '100%', height: '500px', marginBottom: '16px', position: 'relative' }}>
-          <div className="map-location-display">
+        <div className="card" style={{ 
+          width: '100%', 
+          maxWidth: '100%', 
+          height: '60vh', 
+          minHeight: '400px',
+          marginBottom: '16px', 
+          position: 'relative',
+          padding: '0',
+          overflow: 'hidden',
+          borderRadius: '12px',
+          boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)'
+        }}>
+          <div style={{
+            position: 'absolute',
+            top: '12px',
+            left: '12px',
+            zIndex: 1000,
+            background: 'rgba(255, 255, 255, 0.9)',
+            padding: '6px 12px',
+            borderRadius: '20px',
+            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+            fontSize: '0.9em',
+            fontWeight: 500,
+            color: '#333',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            maxWidth: 'calc(100% - 24px)',
+            boxSizing: 'border-box'
+          }}>
+            <span style={{ color: '#4a6cf7' }}>📍</span>
             <LocationDisplay coords={coords} />
           </div>
           <MovableMap 
             coords={coords} 
             setCoords={setCoords} 
             onMapCreated={handleMapCreated}
+            style={{
+              width: '100%',
+              height: '100%',
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0
+            }}
           />
           {mapInstance && <WildfireDetection map={mapInstance} />}
+          <div style={{
+            position: 'absolute',
+            bottom: '12px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 1000,
+            background: 'rgba(255, 255, 255, 0.9)',
+            padding: '8px 16px',
+            borderRadius: '20px',
+            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+            fontSize: '0.85em',
+            color: '#555',
+            textAlign: 'center',
+            maxWidth: '90%',
+            boxSizing: 'border-box',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px'
+          }}>
+            <span style={{ color: '#e53e3e' }}>🔥</span>
+            <span>Click and drag the map to select a location</span>
+          </div>
         </div>
         <div className="card" style={{ marginBottom: 0 }}>
-          <div style={{ marginBottom: 8, fontWeight: 500, color: '#345', fontSize: '1.04em' }}>
+          <div style={{ marginBottom: '16px', fontWeight: 500, color: '#345', fontSize: '1.04em' }}>
             <LocationDisplay coords={coords} />
           </div>
-          <div style={{display:'flex',flexDirection:'column',gap:'0.7em'}}>
-            <div>
-              <label htmlFor="lat">Latitude:</label>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <label htmlFor="lat" style={{ display: 'block', marginBottom: '4px', fontSize: '0.95em' }}>Latitude</label>
               <input
                 id="lat"
                 type="number"
                 value={coords[0]}
-                onChange={e => setCoords([parseFloat(e.target.value), coords[1]])}
+                onChange={e => setCoords([parseFloat(e.target.value) || 0, coords[1]])}
                 step="0.0000001"
-                style={{ width: '175px', fontSize: '1em' }}
+                style={{
+                  width: '100%',
+                  padding: '8px 12px',
+                  borderRadius: '6px',
+                  border: '1px solid #ccc',
+                  fontSize: '1em',
+                  boxSizing: 'border-box'
+                }}
               />
             </div>
-            <div>
-              <label htmlFor="lng">Longitude:</label>
-              <input id="lng" type="number" value={coords[1]} onChange={e => setCoords([coords[0], parseFloat(e.target.value)])} step="0.0001" />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <label htmlFor="lng" style={{ display: 'block', marginBottom: '4px', fontSize: '0.95em' }}>Longitude</label>
+              <input 
+                id="lng" 
+                type="number" 
+                value={coords[1]} 
+                onChange={e => setCoords([coords[0], parseFloat(e.target.value) || 0])} 
+                step="0.0001"
+                style={{
+                  width: '100%',
+                  padding: '8px 12px',
+                  borderRadius: '6px',
+                  border: '1px solid #ccc',
+                  fontSize: '1em',
+                  boxSizing: 'border-box'
+                }}
+              />
             </div>
-            <button onClick={() => fetchAnalysis()}>Analyze Risk</button>
+            <button 
+              onClick={() => fetchAnalysis()}
+              style={{
+                padding: '10px 16px',
+                backgroundColor: '#4a6cf7',
+                color: 'white',
+                border: 'none',
+                borderRadius: '6px',
+                fontSize: '1em',
+                fontWeight: 500,
+                cursor: 'pointer',
+                transition: 'background-color 0.2s',
+                marginTop: '8px'
+              }}
+              onMouseOver={e => e.target.style.backgroundColor = '#3a5ce4'}
+              onMouseOut={e => e.target.style.backgroundColor = '#4a6cf7'}
+            >
+              Analyze Risk
+            </button>
           </div>
         </div>
         {loading && <div className="card">Analyzing wildfire risk...</div>}
