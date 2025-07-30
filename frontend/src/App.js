@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { ToastContainer, toast } from 'react-toastify';
+import ReactMarkdown from 'react-markdown';
 import 'react-toastify/dist/ReactToastify.css';
 import './App.css';
 import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
@@ -154,6 +155,7 @@ function App() {
   const [ttsError, setTtsError] = useState(null);
   const currentUtterance = useRef(null);
   const [mapView, setMapView] = useState('satellite'); // 'satellite' or 'street'
+  const mapRef = useRef();
 
   // Update map instance when it's created
   const handleMapCreated = useCallback((map) => {
@@ -493,107 +495,20 @@ function App() {
         </div>
         {loading && <div className="card">Analyzing wildfire risk...</div>}
         {analysis && analysis.analysis && (
-          <div className="card MarkdownReport" style={{padding: 0, overflow: 'hidden'}}>
+          <div className="card MarkdownReport" style={{padding: '16px', overflow: 'auto'}}>
             <div className="report-header">
               <div className="report-header-content">
                 <span className="report-icon" role="img" aria-label="fire">🔥</span>
-                <div>
-                  <h2 className="report-title">WILDFIRE SITUATION REPORT</h2>
-                  <div className="report-subtitle">
-                    <span className="report-location">
-                      <LocationDisplay coords={coords} />
-                    </span>
-                    <span className="report-date">
-                      {new Date().toLocaleDateString('en-US', { 
-                        year: 'numeric', 
-                        month: 'long', 
-                        day: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit'
-                      })}
-                    </span>
-                  </div>
-                </div>
-              </div>
-              <div className="report-risk-level">
-                <span className={`risk-badge ${analysis.risk_level?.toLowerCase() || 'moderate'}`}>
-                  {analysis.risk_level || 'Risk Level'}
-                </span>
+                <h3>Wildfire Risk Analysis</h3>
               </div>
             </div>
-            
             <div className="report-content">
-              <div className="report-metrics">
-                <div className="metric-card">
-                  <div className="metric-value">
-                    {analysis.fire_count || analysis.fire_detections?.length || 'N/A'}
-                  </div>
-                  <div className="metric-label">Active Fires</div>
-                </div>
-                <div className="metric-card">
-                  <div className="metric-value">
-                    {analysis.confidence !== undefined ? `${Math.round(analysis.confidence)}%` : 'N/A'}
-                  </div>
-                  <div className="metric-label">Detection Confidence</div>
-                </div>
-                <div className="metric-card">
-                  <div className="metric-value">
-                    {analysis.timestamp || analysis.last_updated ? 
-                      new Date(analysis.timestamp || analysis.last_updated).toLocaleString() : 'N/A'}
-                  </div>
-                  <div className="metric-label">Last Updated</div>
-                </div>
-              </div>
-              
-              <div className="report-details">
-                <h3>Analysis Summary</h3>
-                <div className="analysis-text">
-                  <MarkdownReport text={analysis.analysis} />
-                </div>
-                
-                {analysis.recommendations && (
-                  <div className="recommendations">
-                    <h4>Recommended Actions</h4>
-                    <ul>
-                      {Array.isArray(analysis.recommendations) 
-                        ? analysis.recommendations.map((rec, i) => (
-                            <li key={i}><MarkdownReport text={rec} /></li>
-                          ))
-                        : <li><MarkdownReport text={analysis.recommendations} /></li>
-                      }
-                    </ul>
-                  </div>
-                )}
-                
-                {analysis.evacuation_plan && (
-                  <div className="evacuation-plan">
-                    <h4>Evacuation Information</h4>
-                    <div className="evacuation-content">
-                      {analysis.evacuation_plan.instructions && (
-                        <div className="evacuation-instructions">
-                          <h5>Instructions</h5>
-                          <MarkdownReport text={analysis.evacuation_plan.instructions} />
-                        </div>
-                      )}
-                      {analysis.evacuation_plan.routes && (
-                        <div className="evacuation-routes">
-                          <h5>Evacuation Routes</h5>
-                          <MarkdownReport text={analysis.evacuation_plan.routes} />
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-            
-            <div className="report-footer">
-              <div className="data-source">
-                Data Source: NASA FIRMS • Confidence: {analysis.analysis?.confidence || 'N/A'}%
-              </div>
-              <div className="report-timestamp">
-                Generated: {new Date().toISOString().replace('T', ' ').substring(0, 19)} UTC
-              </div>
+              <ReactMarkdown>
+                {typeof (analysis.analysis.summary || analysis.analysis) === 'string' 
+                  ? (analysis.analysis.summary || analysis.analysis) 
+                  : JSON.stringify(analysis.analysis.summary || analysis.analysis, null, 2)
+                }
+              </ReactMarkdown>
             </div>
           </div>
         )}
@@ -644,48 +559,11 @@ function App() {
                 <div style={{ height: '600px', width: '100%' }}>
                   <MapContainer 
                     center={coords} 
-                    zoom={8} 
-                    style={{ height: '100%', width: '100%' }}
-                    whenCreated={(map) => {
-                      // Add fire data layer
-                      if (analysis?.fire_detections?.length > 0) {
-                        const fireMarkers = analysis.fire_detections
-                          .filter(fire => fire.latitude && fire.longitude)
-                          .map(fire => {
-                            const marker = L.circleMarker(
-                              [fire.latitude, fire.longitude], 
-                              {
-                                radius: 6,
-                                fillColor: getFireColor(fire.confidence || 50),
-                                color: '#000',
-                                weight: 1,
-                                opacity: 1,
-                                fillOpacity: 0.8
-                              }
-                            );
-                            
-                            const popupContent = `
-                              <div style="min-width: 200px">
-                                <strong>Fire Detection</strong><br>
-                                Confidence: ${Math.round(fire.confidence || 50)}%<br>
-                                Date: ${fire.acq_date || 'N/A'}<br>
-                                ${fire.brightness ? `Brightness: ${fire.brightness} K<br>` : ''}
-                                <small>Click for details</small>
-                              </div>
-                            `;
-                            
-                            marker.bindPopup(popupContent);
-                            return marker;
-                          });
-
-                        const fireGroup = L.layerGroup(fireMarkers).addTo(map);
-                        
-                        // Fit map to show all fire markers with some padding
-                        if (fireMarkers.length > 0) {
-                          const group = new L.featureGroup(fireMarkers);
-                          map.fitBounds(group.getBounds().pad(0.1));
-                        }
-                      }
+                    zoom={8}
+                    style={{ 
+                      height: '100%', 
+                      width: '100%',
+                      position: 'relative'
                     }}
                   >
                     {mapView === 'satellite' ? (
@@ -709,12 +587,12 @@ function App() {
                     )}
                   </MapContainer>
                 </div>
-                <div className="text-muted small p-3 text-center" style={{ borderTop: '1px solid #eee' }}>
-                  Data source: NASA FIRMS |{' '}
-                  <a href="https://firms.modaps.eosdis.nasa.gov/map/" target="_blank" rel="noopener noreferrer">
-                    View on NASA FIRMS
-                  </a>
-                </div>
+              </div>
+              <div className="text-muted small p-3 text-center" style={{ borderTop: '1px solid #eee' }}>
+                Data source: NASA FIRMS |{' '}
+                <a href="https://firms.modaps.eosdis.nasa.gov/map/" target="_blank" rel="noopener noreferrer">
+                  View on NASA FIRMS
+                </a>
               </div>
             </div>
           </div>
