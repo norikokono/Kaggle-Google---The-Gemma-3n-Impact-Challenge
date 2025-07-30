@@ -192,21 +192,23 @@ export default function AudioRecorder({ onTranscription, disabled }) {
           {error}
         </div>
       )}
-      <style jsx>{`
-        @keyframes pulse {
-          0% { opacity: 1; }
-          50% { opacity: 0.5; }
-          100% { opacity: 1; }
-        }
-        .pulse-dot {
-          display: inline-block;
-          width: 10px;
-          height: 10px;
-          background-color: white;
-          border-radius: 50%;
-          animation: pulse 1.5s infinite;
-        }
-      `}</style>
+      <style>
+        {`
+          @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+          }
+          .pulse-dot {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            background-color: white;
+            border-radius: 50%;
+            animation: pulse 1.5s infinite;
+          }
+        `}
+      </style>
     </div>
   );
 }

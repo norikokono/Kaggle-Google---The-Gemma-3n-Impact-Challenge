@@ -134,16 +134,7 @@ function LocationDisplay({ coords }) {
 function App() {
   const [coords, setCoords] = useState([48.1667, -100.1667]); // Default: Center of North America
   const [searchText, setSearchText] = useState('');
-  const [analysis, setAnalysis] = useState({
-    fire_detections: [],
-    fire_count: 0,
-    analysis: { confidence: 0 },
-    confidence: 0,
-    timestamp: null,
-    last_updated: null,
-    risk_level: 'Unknown',
-    error: null
-  });
+  const [analysis, setAnalysis] = useState(null);
   const [loading, setLoading] = useState(false);
   const [voiceActive, setVoiceActive] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
@@ -275,16 +266,7 @@ function App() {
   // Fetch AI analysis
   const fetchAnalysis = async (locationText = null) => {
     setLoading(true);
-    setAnalysis({
-      fire_detections: [],
-      fire_count: 0,
-      analysis: { confidence: 0 },
-      confidence: 0,
-      timestamp: null,
-      last_updated: null,
-      risk_level: 'Unknown',
-      error: null
-    });
+    setAnalysis(null); // Clear previous analysis when starting a new request
     
     try {
       const requestData = {
@@ -336,11 +318,17 @@ function App() {
       
     } catch (err) {
       console.error('Error in fetchAnalysis:', err);
-      setAnalysis(prev => ({
-        ...prev,
+      setAnalysis({
+        fire_detections: [],
+        fire_count: 0,
+        analysis: { confidence: 0, summary: '', recommendations: [] },
+        confidence: 0,
+        timestamp: new Date().toISOString(),
+        last_updated: new Date().toISOString(),
+        risk_level: 'Error',
         error: `Failed to fetch analysis: ${err.message}`,
         details: process.env.NODE_ENV === 'development' ? err.stack : undefined
-      }));
+      });
       
       // Show error toast to user
       toast.error(`Error: ${err.message}`, {
