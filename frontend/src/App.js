@@ -12,6 +12,7 @@ import markerShadow from 'leaflet/dist/images/marker-shadow.png';
 import MarkdownReport from './MarkdownReport';
 import AudioRecorder from './AudioRecorder';
 import WildfireDetection from './components/WildfireDetection';
+import { post } from './utils/api';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL;
 
@@ -280,25 +281,7 @@ function App() {
       
       console.log('Sending request to API with data:', requestData);
       
-      const apiUrl = `${API_BASE_URL}/api/analyze-fire-map`;
-      
-      console.log('Using API URL:', apiUrl);
-      const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestData)
-      });
-      
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        const errorMessage = errorData.detail || `HTTP error! status: ${response.status}`;
-        console.error('API Error:', errorMessage);
-        throw new Error(errorMessage);
-      }
-      
-      const data = await response.json();
+      const data = await post('/analyze-fire-map', requestData);
       console.log('API Response:', data);
       
       // Process the response to ensure it has the expected structure

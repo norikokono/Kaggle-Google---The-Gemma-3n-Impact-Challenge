@@ -2,11 +2,13 @@
   "name": "wildguard-frontend",
   "version": "0.1.0",
   "private": true,
+  "proxy": "http://localhost:8000",
   "dependencies": {
     "@testing-library/jest-dom": "^6.1.4",
     "@testing-library/react": "^14.1.2",
     "@testing-library/user-event": "^14.4.3",
     "bootstrap": "^5.3.7",
+    "firebase": "^9.22.0",
     "html2canvas": "^1.4.1",
     "leaflet": "^1.9.4",
     "leaflet.heat": "^0.2.0",

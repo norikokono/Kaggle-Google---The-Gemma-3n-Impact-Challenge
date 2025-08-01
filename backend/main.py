@@ -55,30 +55,53 @@ app = FastAPI()
 # CORS Configuration
 if ENVIRONMENT == "production":
     ALLOWED_ORIGINS = [
-        "https://wildguard-hackathon-2025.web.app",  
-        "https://wildguard-hackathon-2025.firebaseapp.com"  
+        "https://wildguard-hackathon-2025.web.app",
+        "https://wildguard-hackathon-2025.firebaseapp.com"
     ]
 else:
-    # Development settings
-    ALLOWED_ORIGINS = [
-        "http://localhost:3000",  # Common React dev server
-        "http://127.0.0.1:3000",
-        "http://localhost:8000",  # Common FastAPI dev server
-        "http://127.0.0.1:8000",
-        "http://localhost:8080",  # Common alternative port
-        "http://127.0.0.1:8080"
-    ]
+    ALLOWED_ORIGINS = ["*"]
 
-# Add CORS middleware
+print(f"CORS Configuration - Allowed Origins: {ALLOWED_ORIGINS}")
+
+# Add CORS middleware as the first middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["Content-Disposition"],
-    max_age=600  # Cache preflight requests for 10 minutes
+    expose_headers=["*"],
+    max_age=600
 )
+
+# Add middleware to log all incoming requests
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    # Log the incoming request
+    print(f"Incoming request: {request.method} {request.url}")
+    print(f"Origin header: {request.headers.get('origin')}")
+    
+    # Call the next middleware/route handler
+    response = await call_next(request)
+    
+    # Log the response status
+    print(f"Response status: {response.status_code}")
+    return response
+
+# Explicit OPTIONS handler for all routes
+@app.options("/{path:path}")
+async def options_handler():
+    return JSONResponse(status_code=200, content={"status": "ok"})
+
+# Explicit OPTIONS handler for analyze-fire-map
+@app.options("/api/analyze-fire-map")
+async def options_analyze_fire_map():
+    response = JSONResponse(content={"status": "ok"})
+    response.headers["Access-Control-Allow-Origin"] = "https://wildguard-hackathon-2025.web.app"
+    response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+    response.headers["Access-Control-Allow-Credentials"] = "true"
+    return response
 
 # --- Security Headers Middleware ---
 @app.middleware("http")
