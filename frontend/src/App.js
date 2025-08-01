@@ -13,6 +13,8 @@ import MarkdownReport from './MarkdownReport';
 import AudioRecorder from './AudioRecorder';
 import WildfireDetection from './components/WildfireDetection';
 
+const API_BASE_URL = process.env.REACT_APP_API_URL;
+
 // Geocode utility (OpenStreetMap Nominatim)
 async function geocodeLocation(locationText) {
   const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(locationText)}`;
@@ -269,18 +271,16 @@ function App() {
     setAnalysis(null); // Clear previous analysis when starting a new request
     
     try {
+      // Format the request data to match the backend's FireAnalysisRequest model
       const requestData = {
         lat: coords[0],
         lng: coords[1],
-        radius_km: 50
+        radius_km: 50.0
       };
       
       console.log('Sending request to API with data:', requestData);
       
-      // Use the Firebase Functions URL in production, fallback to localhost in development
-      const apiUrl = process.env.NODE_ENV === 'production'
-        ? 'https://us-central1-wildguard-hackathon-2025.cloudfunctions.net/analyzeFireMap'
-        : 'http://127.0.0.1:5001/wildguard-hackathon-2025/us-central1/analyzeFireMap';
+      const apiUrl = `${API_BASE_URL}/api/analyze-fire-map`;
       
       console.log('Using API URL:', apiUrl);
       const response = await fetch(apiUrl, {

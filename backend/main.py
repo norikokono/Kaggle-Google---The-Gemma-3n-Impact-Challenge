@@ -17,12 +17,10 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Union, Tuple, Callable
 from pydantic import BaseModel, Field
-import ssl  
 import uuid
 import aiohttp
 import httpx
 import shutil
-import re
 import filelock
 from shapely.geometry import Point
 import aiofiles
@@ -30,19 +28,77 @@ import aiofiles.os
 import pandas as pd
 from io import StringIO, BytesIO
 import csv
-from fastapi import FastAPI, HTTPException, Depends, Request, UploadFile, File, Form, BackgroundTasks, status
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import JSONResponse, FileResponse, HTMLResponse, Response
+
+import fastapi
+import starlette
+print("FASTAPI VERSION:", fastapi.__version__)
+print("STARLETTE VERSION:", starlette.__version__)
+
+from fastapi import FastAPI, Request, BackgroundTasks, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse
+import os
 
-# Local imports
-from gemma import WildGuardAI
-from utils import Coordinates, BoundingBox
+# --- Environment Configuration ---
+ENVIRONMENT = os.getenv("ENVIRONMENT", "development")  # Default to development
 
-# Set up logging
+# --- Config import/fallback ---
+try:
+    from .config import Config
+except ImportError:
+    class Config:
+        STATIC_FOLDER = "static"  # fallback if config import fails
+
+app = FastAPI()
+
+# CORS Configuration
+if ENVIRONMENT == "production":
+    ALLOWED_ORIGINS = [
+        "https://wildguard-hackathon-2025.web.app",  
+        "https://wildguard-hackathon-2025.firebaseapp.com"  
+    ]
+else:
+    # Development settings
+    ALLOWED_ORIGINS = [
+        "http://localhost:3000",  # Common React dev server
+        "http://127.0.0.1:3000",
+        "http://localhost:8000",  # Common FastAPI dev server
+        "http://127.0.0.1:8000",
+        "http://localhost:8080",  # Common alternative port
+        "http://127.0.0.1:8080"
+    ]
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["*"],
+    expose_headers=["Content-Disposition"],
+    max_age=600  # Cache preflight requests for 10 minutes
+)
+
+# --- Security Headers Middleware ---
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    return response
+
+# --- Static Files Mount ---
+if os.path.isdir(Config.STATIC_FOLDER):
+    app.mount("/static", StaticFiles(directory=Config.STATIC_FOLDER), name="static")
+else:
+    print(f"Warning: Static folder '{Config.STATIC_FOLDER}' does not exist. Static files will not be served.")
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+from utils import Coordinates
+from gemma import WildGuardAI
 
 # System prompt for wildfire analysis
 WILDFIRE_SYSTEM_PROMPT = """
@@ -88,20 +144,24 @@ class WildfireResponse(BaseModel):
     source: str = "online"
 
 class EvacuationRequest(BaseModel):
-    """Request model for evacuation planning."""
-    current_location: Coordinates
-    safe_locations: List[Coordinates]
-    hazards: List[Dict[str, Any]]
-    accessibility_needs: List[str] = Field(default_factory=list)
+    """
+    Request model for evacuation planning.
+    """
+    current_location: Coordinates = Field(..., description="Current location coordinates")
+    safe_locations: List[Coordinates] = Field(..., description="List of safe location coordinates")
+    hazards: List[Dict[str, Any]] = Field(default_factory=list, description="List of hazards in the area")
+    accessibility_needs: List[str] = Field(default_factory=list, description="Accessibility needs for the group")
     group_size: int = Field(1, ge=1, description="Number of people in the group")
 
 class EvacuationResponse(BaseModel):
-    """Response model for evacuation planning."""
-    status: str
-    routes: List[Dict]
-    estimated_duration: str
-    warnings: List[str]
-    timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    """
+    Response model for evacuation planning.
+    """
+    status: str = Field(..., description="Status of the evacuation plan")
+    routes: List[Dict[str, Any]] = Field(..., description="List of suggested evacuation routes")
+    estimated_duration: str = Field(..., description="Estimated duration for evacuation")
+    warnings: List[str] = Field(default_factory=list, description="List of warnings or alerts")
+    timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat(), description="Timestamp of the response")
 
 class FireAnalysisResponse(BaseModel):
     """Response model for fire analysis."""
@@ -999,6 +1059,13 @@ async def get_generated_image(
     
     raise HTTPException(status_code=404, detail="Image not found")
 
+from fastapi.responses import JSONResponse
+
+@app.options("/api/analyze-fire-map")
+async def options_analyze_fire_map():
+    # This empty response will trigger CORSMiddleware to add the correct headers
+    return JSONResponse(content={}, status_code=200)
+
 @app.post("/api/analyze-fire-map", response_model=FireAnalysisResponse)
 async def analyze_fire_map(
     request_data: FireAnalysisRequest,
@@ -1645,7 +1712,6 @@ async def generate_fire_map(fire_data: List[Dict], lat: float, lng: float, radiu
         # Fit the map to show all markers with some padding
         m.fit_bounds(m.get_bounds(), padding=(30, 30))
         
-        # Save the map to an HTML file
         map_path = os.path.join(Config.UPLOAD_FOLDER, f"{analysis_id}.html")
         m.save(map_path)
         

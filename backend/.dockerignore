@@ -1,0 +1,81 @@
+# Python cache and environment
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg-info/
+.eggs/
+
+# Virtual environments
+env/
+.venv/
+venv/
+ENV/
+
+# Environment and secrets
+.env
+.env.*
+*.env
+secrets.*
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/
+*.code-workspace
+
+# Node and JS artifacts (if any)
+node_modules/
+package-lock.json
+yarn.lock
+
+# Git and documentation
+.git/
+.gitignore
+README.md
+*.log
+
+# Build, test, and runtime artifacts
+build/
+dist/
+*.egg
+*.bak
+*.tmp
+coverage*
+htmlcov/
+.tox/
+.pytest_cache/
+.mypy_cache/
+model_cache/
+uploads/
+static/
+
+# Docker
+Dockerfile*
+.dockerignore
+
+# Cloud deployment configs (optional, keep if needed)
+*.tf
+*.tfstate
+*.gcloud*
+*.yaml
+*.yml
+
+# Misc
+*.sqlite3
+*.db
+*.h5
+*.pth
+*.ckpt
+*.onnx
+*.tflite
+*.csv
+*.tsv
+*.xls
+*.xlsx
+*.ipynb

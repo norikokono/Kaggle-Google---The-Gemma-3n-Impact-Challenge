@@ -129,18 +129,9 @@ except NameError:
     app = FastAPI()
 
 @app.post("/api/transcribe")
-async def transcribe_audio(file: UploadFile = File(...)):
-    if not WHISPER_AVAILABLE or whisper_model is None:
-        return JSONResponse(status_code=503, content={"error": "Whisper STT not available on this server."})
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
-        tmp.write(await file.read())
-        tmp_path = tmp.name
-    try:
-        result = whisper_model.transcribe(tmp_path)
-        text = result["text"]
-    except Exception as e:
-        logger.error(f"Whisper transcription error: {e}")
-        text = ""
-    finally:
-        os.unlink(tmp_path)
-    return {"text": text}
+async def transcribe_audio(audio_file: UploadFile):
+    """Audio transcription endpoint (disabled in this deployment)."""
+    return {
+        "text": "Audio transcription is disabled in this deployment. Please use the text input instead.",
+        "error": "Audio transcription is not available in this deployment."
+    }

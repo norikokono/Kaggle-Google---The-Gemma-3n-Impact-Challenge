@@ -1,4 +1,4 @@
-fastapi>=0.68.0
+fastapi>=0.95
 uvicorn>=0.15.0
 earthengine-api>=0.1.367
 geemap>=0.20.0
@@ -8,10 +8,6 @@ numpy>=1.21.0
 python-dotenv>=0.19.0
 transformers
 pillow
-openai-whisper>=20231117
-soundfile>=0.12.1
-torch>=2.0.0
-torchaudio>=2.0.0
 TTS>=0.22.0
 ffmpeg-python>=0.2.0
 geopandas>=0.12.2
@@ -19,9 +15,9 @@ contextily
 httpx
 aiofiles
 google-generativeai>=0.3.0
-firebase-functions>=1.0.0
-firebase-admin>=6.0.0
+functions-framework
 gunicorn>=20.0.0
 python-jose[cryptography]>=3.3.0
 passlib[bcrypt]>=1.7.4
 python-multipart>=0.0.5
+starlette>=0.27
