@@ -1,6 +1,6 @@
 const API_BASE_URL = process.env.NODE_ENV === 'production' 
   ? '/api'  // This will be relative to your domain
-  : 'http://localhost:8000';  // For local development
+  : 'http://localhost:8080';  // For local development
 
 export const apiRequest = async (endpoint, options = {}) => {
   const cleanEndpoint = endpoint.startsWith('/') ? endpoint.slice(1) : endpoint;

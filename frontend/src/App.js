@@ -333,64 +333,101 @@ function App() {
     }
   };
 
-  const speakWithBackendTTS = async (text) => {
+  const speakWithBackendTTS = (text) => {
+    // 1. Reset any previous errors and set speaking state
+    setTtsError(null);
+    
+    // 2. Check if speech synthesis is available
+    if (!('speechSynthesis' in window)) {
+      const errorMsg = 'Text-to-speech is not supported in your browser';
+      console.error(errorMsg);
+      setTtsError(errorMsg);
+      return;
+    }
+    
+    // 3. Convert input to string safely
+    let textToSpeak = 'No text available to read.';
     try {
-      // Clean the text (remove emojis and special characters)
-      const cleanedText = text
-        .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '')
-        .replace(/[^\w\s.,!?]/g, '') // Remove any remaining special characters
-        .replace(/\s+/g, ' ') // Replace multiple spaces with a single space
+      if (text === null || text === undefined) {
+        textToSpeak = 'No text available to read.';
+      } else if (typeof text === 'string') {
+        textToSpeak = text;
+      } else if (typeof text === 'object') {
+        // Handle different possible response formats
+        textToSpeak = text.analysis || 
+                     text.report || 
+                     text.text ||
+                     (text.data && text.data.analysis) ||
+                     'No readable content found in the response.';
+        
+        // If we still have an object, convert it to string
+        if (typeof textToSpeak === 'object') {
+          textToSpeak = JSON.stringify(textToSpeak);
+        }
+      } else {
+        // Handle numbers, booleans, etc.
+        textToSpeak = String(text);
+      }
+      
+      // 4. Clean the text
+      textToSpeak = textToSpeak
+        .replace(/<[^>]*>/g, '') // Remove HTML tags
+        .replace(/\s+/g, ' ')    // Replace multiple spaces with single space
         .trim();
       
-      // Create a new utterance with the cleaned text
-      const utterance = new SpeechSynthesisUtterance(cleanedText);
+      if (!textToSpeak) {
+        throw new Error('No valid text content to read');
+      }
       
-      // Set up event handlers
+      // 5. Create and configure the utterance
+      const utterance = new SpeechSynthesisUtterance(textToSpeak);
+      
+      // 6. Set up event handlers
+      utterance.onstart = () => {
+        console.log('Speech started');
+        setIsSpeaking(true);
+      };
+      
       utterance.onend = () => {
-        console.log('Speech finished');
+        console.log('Speech ended');
         setIsSpeaking(false);
-        setTtsError(null);
       };
       
       utterance.onerror = (event) => {
-        console.error('SpeechSynthesis error:', event);
-        setTtsError('Error during speech synthesis');
+        console.error('Speech synthesis error:', event);
+        setTtsError('Error reading the text. Please try again.');
         setIsSpeaking(false);
       };
-
-      // Cancel any current speech
-      speechSynthesis.cancel();
       
-      // Start speaking
+      // 7. Stop any current speech and start the new one
+      speechSynthesis.cancel();
       speechSynthesis.speak(utterance);
-      setIsSpeaking(true);
-      setTtsError(null);
       
     } catch (error) {
-      console.error('Error with TTS:', error);
-      setTtsError('Speech synthesis is not available in this browser');
+      console.error('Error preparing text for speech:', error);
+      setTtsError('Error preparing the text for reading');
       setIsSpeaking(false);
     }
   };
 
   const handleTtsClick = () => {
+    // If already speaking, stop it
     if (isSpeaking) {
-      // If already speaking, stop it
       speechSynthesis.cancel();
       setIsSpeaking(false);
       return;
     }
-
+    
+    // If paused, resume
     if (speechSynthesis.paused) {
-      // If paused, resume
       speechSynthesis.resume();
       setIsSpeaking(true);
       return;
     }
-
-    // Start new speech
-    const rawText = analysis.report || analysis.analysis || 'No report available to read.';
-    speakWithBackendTTS(rawText);
+    
+    // Start new speech with the analysis data
+    // speakWithBackendTTS will handle all the text extraction and cleaning
+    speakWithBackendTTS(analysis || 'No analysis available to read.');
   };
 
   return (

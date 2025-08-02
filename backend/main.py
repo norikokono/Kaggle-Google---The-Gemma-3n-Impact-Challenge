@@ -1,7 +1,21 @@
 #!/usr/bin/env python3
 """
-WildGuard: Offline-First AI for Early Wildfire Detection
-Uses NASA FIRMS API for fire detection and Google's Gemma 3n for analysis
+WildGuard: AI-Powered Wildfire Detection and Analysis System
+
+A real-time wildfire monitoring platform that combines satellite data with advanced AI to provide
+comprehensive fire risk assessment and analysis. The system processes NASA FIRMS satellite data
+to detect active fires and uses Google's Gemma 3n model to generate detailed risk assessments,
+recommendations, and natural language insights.
+
+Key Features:
+- Real-time fire detection using NASA's FIRMS satellite data
+- AI-powered risk assessment and analysis
+- Interactive visualization of fire incidents
+- Natural language processing for intuitive querying
+- Scalable backend with FastAPI for high-performance data processing
+
+This application serves as a demonstration of how AI can enhance environmental monitoring
+and emergency response capabilities.
 """
 import os
 import json

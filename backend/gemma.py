@@ -26,18 +26,28 @@ CACHE_DIR = Path("./model_cache")
 CACHE_DIR.mkdir(exist_ok=True)
 
 class WildGuardAI:
-    def __init__(self, offline_mode: bool = True):
-        """Initialize the WildGuard AI model with offline-first capabilities."""
+    def __init__(self, offline_mode: bool = False):
+        """Initialize the WildGuard AI model.
+        
+        Note: Offline mode is not currently implemented. This parameter is reserved
+        for future development.
+        """
         self.offline_mode = offline_mode
+        if offline_mode:
+            logger.warning("Offline mode is not currently implemented. Using online mode.")
+            self.offline_mode = False
+            
         self.model = None
         self.genai = genai  # Store reference to genai module
         self._init_model()
 
     def _init_model(self):
-        """Initialize the Gemma model with offline support."""
+        """Initialize the Gemma model.
+        
+        Note: Currently requires an internet connection and valid API key.
+        """
         if not GENAI_AVAILABLE:
-            self.offline_mode = True
-            logger.warning("google.generativeai not available. Forcing offline mode.")
+            raise RuntimeError("google.generativeai package is required but not available.")
             
         try:
             if not self.offline_mode and GENAI_AVAILABLE and self.genai is not None:
