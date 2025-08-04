@@ -3,6 +3,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Spinner, Alert, Button, Modal } from 'react-bootstrap';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import { apiRequest } from '../utils/api';
 import 'leaflet.heat';
 
 // North America bounding box (minLat, minLng, maxLat, maxLng)
@@ -60,35 +61,25 @@ const WildfireDetection = ({ map }) => {
       
       console.log('Sending request with data:', requestData);
       
-      // Make the request with JSON data
-      const response = await fetch('http://127.0.0.1:8000/api/analyze-fire-map', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestData),
-      });
-      
-      if (!response.ok) {
-        let errorText;
-        try {
-          errorText = await response.text();
-          const errorJson = JSON.parse(errorText);
-          console.error('Server response error:', response.status, errorJson);
-          throw new Error(errorJson.detail || `HTTP error! status: ${response.status}`);
-        } catch (e) {
-          console.error('Error parsing error response:', e);
-          throw new Error(`HTTP error! status: ${response.status}, body: ${errorText || 'No details'}`);
+      let result;
+      try {
+        // Make the request with JSON data using the apiRequest utility
+        result = await apiRequest('analyze-fire-map', {
+          method: 'POST',
+          body: JSON.stringify(requestData)
+        });
+        
+        console.log('Received fire data:', result);
+        
+        // Ensure we have fire detections in the response
+        if (!result.fire_detections) {
+          console.warn('No fire_detections in response:', result);
+          setError('No fire data available for this area');
+          return;
         }
-      }
-      
-      const result = await response.json();
-      console.log('Received fire data:', result);
-      
-      // Ensure we have fire detections in the response
-      if (!result.fire_detections) {
-        console.warn('No fire_detections in response:', result);
-        setError('No fire data available for this area');
+      } catch (error) {
+        console.error('Error fetching fire data:', error);
+        setError(`Failed to fetch fire data: ${error.message}`);
         return;
       }
       

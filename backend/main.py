@@ -48,7 +48,13 @@ import starlette
 print("FASTAPI VERSION:", fastapi.__version__)
 print("STARLETTE VERSION:", starlette.__version__)
 
-from fastapi import FastAPI, Request, BackgroundTasks, Depends
+from fastapi import FastAPI, Request, BackgroundTasks, Depends, Query, HTTPException, status
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from fastapi.requests import Request
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
@@ -67,63 +73,75 @@ except ImportError:
 app = FastAPI()
 
 # CORS Configuration
-if ENVIRONMENT == "production":
-    ALLOWED_ORIGINS = [
-        "https://wildguard-hackathon-2025.web.app",
-        "https://wildguard-hackathon-2025.firebaseapp.com"
-    ]
-else:
-    ALLOWED_ORIGINS = ["*"]
+# Allow both local development and production origins
+allowed_origins = [
+    "https://wildguard-hackathon-2025.web.app",
+    "http://localhost:3000",  # For local development
+    "http://127.0.0.1:3000"   # For local development
+]
 
-print(f"CORS Configuration - Allowed Origins: {ALLOWED_ORIGINS}")
-
-# Add CORS middleware as the first middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
+    allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-    expose_headers=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
+    expose_headers=["Content-Disposition"],
     max_age=600
 )
 
-# Add middleware to log all incoming requests
+# Log CORS configuration for debugging
+print(f"CORS Configuration - Allowed Origins: {allowed_origins}")
+
+# Add middleware to log all incoming requests and add security headers
 @app.middleware("http")
-async def log_requests(request: Request, call_next):
+async def log_requests_and_add_headers(request: Request, call_next):
     # Log the incoming request
     print(f"Incoming request: {request.method} {request.url}")
-    print(f"Origin header: {request.headers.get('origin')}")
+    print(f"Origin: {request.headers.get('origin')}")
     
     # Call the next middleware/route handler
     response = await call_next(request)
+    
+    # Add security and CORS headers to all responses
+    origin = request.headers.get('origin')
+    if origin and origin in [
+        "https://wildguard-hackathon-2025.web.app",
+        "https://wildguard-hackathon-2025.firebaseapp.com",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000"
+    ]:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+    
+    # Security headers
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     
     # Log the response status
     print(f"Response status: {response.status_code}")
     return response
 
-# Explicit OPTIONS handler for all routes
+# OPTIONS handler for preflight requests
 @app.options("/{path:path}")
-async def options_handler():
-    return JSONResponse(status_code=200, content={"status": "ok"})
-
-# Explicit OPTIONS handler for analyze-fire-map
-@app.options("/api/analyze-fire-map")
-async def options_analyze_fire_map():
+async def options_handler(request: Request, path: str):
     response = JSONResponse(content={"status": "ok"})
-    response.headers["Access-Control-Allow-Origin"] = "https://wildguard-hackathon-2025.web.app"
-    response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
-    response.headers["Access-Control-Allow-Headers"] = "Content-Type"
-    response.headers["Access-Control-Allow-Credentials"] = "true"
+    origin = request.headers.get('origin')
+    if origin and origin in [
+        "https://wildguard-hackathon-2025.web.app",
+        "https://wildguard-hackathon-2025.firebaseapp.com",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000"
+    ]:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers["Access-Control-Max-Age"] = "600"
     return response
 
-# --- Security Headers Middleware ---
-@app.middleware("http")
-async def add_security_headers(request: Request, call_next):
-    response = await call_next(request)
-    response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["X-Frame-Options"] = "DENY"
-    return response
 
 # --- Static Files Mount ---
 if os.path.isdir(Config.STATIC_FOLDER):
@@ -308,7 +326,8 @@ async def lifespan(app: FastAPI):
 # Initialize WildGuard AI
 wildguard_ai = init_genai()
 
-# Initialize FastAPI app with lifespan
+
+# Initialize FastAPI with middleware
 app = FastAPI(
     title="WildGuard API",
     description="Offline-first AI for Early Wildfire Detection and Response",
@@ -323,8 +342,6 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3000",  # React dev server
         "http://127.0.0.1:3000",  # React dev server alternative
-        "http://localhost:8000",  # Local FastAPI server
-        "http://127.0.0.1:8000"   # Local FastAPI server alternative
     ],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
@@ -363,7 +380,8 @@ except ImportError as e:
 
 from fastapi.responses import RedirectResponse
 
-@app.get("/")
+@app.get("/", include_in_schema=False)
+@app.get("/api", include_in_schema=True)
 async def root():
     return RedirectResponse(url="/docs")
 
@@ -1098,25 +1116,156 @@ async def get_generated_image(
 
 from fastapi.responses import JSONResponse
 
-@app.options("/api/analyze-fire-map")
-async def options_analyze_fire_map():
-    # This empty response will trigger CORSMiddleware to add the correct headers
-    return JSONResponse(content={}, status_code=200)
+from fastapi import FastAPI, Request, Response
+from fastapi.middleware.cors import CORSMiddleware
 
-@app.post("/api/analyze-fire-map", response_model=FireAnalysisResponse)
+# Create the FastAPI instance
+app = FastAPI()
+
+# CORS Configuration
+# Allow both local development and production origins
+allowed_origins = [
+    "https://wildguard-hackathon-2025.web.app",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000"
+]
+
+# Add CORS middleware - this needs to be first
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allowed_origins,
+    allow_credentials=True,
+    allow_methods=["*"],  # Allow all methods
+    allow_headers=["*"],  # Allow all headers
+    expose_headers=["*"],
+    max_age=600
+)
+
+# Global OPTIONS handler for all paths - this needs to be before other routes
+@app.options("/{path:path}", include_in_schema=False)
+async def options_handler(path: str, request: Request):
+    """Handle all OPTIONS requests with CORS headers."""
+    # Get the Origin header from the request
+    origin = request.headers.get('Origin', '')
+    
+    # If the origin is in our allowed list, use it, otherwise use a default
+    allowed_origin = origin if origin in allowed_origins else "https://wildguard-hackathon-2025.web.app"
+    
+    # Create a plain response with CORS headers
+    response = Response(
+        content="",
+        status_code=204,  # No Content - standard for OPTIONS
+        media_type="text/plain"
+    )
+    
+    # Set CORS headers
+    response.headers["Access-Control-Allow-Origin"] = allowed_origin
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Requested-With"
+    response.headers["Access-Control-Allow-Credentials"] = "true"
+    response.headers["Access-Control-Max-Age"] = "600"
+    response.headers["Vary"] = "Origin"
+    
+    # Log for debugging
+    print(f"OPTIONS request from origin: {origin}, allowed: {allowed_origin}")
+    
+    return response
+
+class FireAnalysisRequest(BaseModel):
+    lat: float = Field(..., description="Latitude")
+    lng: float = Field(..., description="Longitude")
+    radius_km: float = Field(50.0, description="Radius in kilometers")
+
+@app.api_route("/analyze-fire-map", methods=["GET", "POST", "OPTIONS"], response_model=FireAnalysisResponse)
+@app.api_route("/api/analyze-fire-map", methods=["GET", "POST", "OPTIONS"], response_model=FireAnalysisResponse)
 async def analyze_fire_map(
-    request_data: FireAnalysisRequest,
+    request: Request,
     background_tasks: BackgroundTasks,
-    request: Request = None
+    lat: float = Query(None, description="Latitude"),
+    lng: float = Query(None, description="Longitude"),
+    radius_km: float = Query(50.0, description="Radius in kilometers"),
+    request_data: FireAnalysisRequest = None
 ):
+    # Handle CORS preflight
+    if request.method == "OPTIONS":
+        return Response(
+            content="",
+            status_code=204,
+            headers={
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+                "Access-Control-Allow-Headers": "Content-Type, Authorization",
+                "Access-Control-Allow-Credentials": "true",
+                "Access-Control-Max-Age": "600"
+            }
+        )
+    """
+    Analyze fire map data for a specific location.
+    
+    This endpoint processes the request data and fetches fire data from NASA FIRMS API
+    to provide a comprehensive fire analysis for the specified location.
+    
+    Supports both GET (with query parameters) and POST (with JSON body) requests.
+    """
+    # OPTIONS requests should be handled by the global OPTIONS handler
+    # Handle both GET and POST requests
+    if request.method in ["GET", "POST"]:
+        if request.method == "POST":
+            try:
+                json_data = await request.json()
+                request_data = FireAnalysisRequest(**json_data)
+            except json.JSONDecodeError:
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "error": "invalid_json",
+                        "message": "Invalid JSON in request body"
+                    }
+                )
+            except ValueError as e:
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "error": "invalid_request_data",
+                        "message": str(e)
+                    }
+                )
+        else:  # GET request
+            if lat is None or lng is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "error": "missing_required_parameters",
+                        "message": "Missing required query parameters: lat and lng",
+                        "required": ["lat", "lng"],
+                        "optional": ["radius_km"]
+                    }
+                )
+            try:
+                request_data = FireAnalysisRequest(
+                    lat=lat,
+                    lng=lng,
+                    radius_km=radius_km
+                )
+            except ValueError as e:
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "error": "invalid_parameters",
+                        "message": str(e),
+                        "received": {"lat": lat, "lng": lng, "radius_km": radius_km}
+                    }
+                )
+
+    logger.info(f"Received analyze-fire-map request: {request_data}")
     """
     Analyze fire map data for a specific location.
     
     This endpoint processes the request data and fetches fire data from NASA FIRMS API
     to provide a comprehensive fire analysis for the specified location.
     """
+    logger.info(f"Received analyze-fire-map request: {request_data}")
     try:
-        logger.info(f"Received request data: {request_data}")
         lat = request_data.lat
         lng = request_data.lng
         radius_km = request_data.radius_km
@@ -1147,12 +1296,12 @@ async def analyze_fire_map(
         )
         
         # Get base URL for generating absolute URLs
-        base_url = "http://localhost:8000"
+        base_url = "http://localhost:8080"  # Match frontend's expected port
         if request:
             request_scope = request.scope
             scheme = request_scope.get('scheme', 'http')
-            server_host = request_scope.get('server', ('localhost', 8000))[0]
-            server_port = request_scope.get('server', ('localhost', 8000))[1]
+            server_host = request_scope.get('server', ('localhost', 8080))[0]
+            server_port = request_scope.get('server', ('localhost', 8080))[1]
             base_url = f"{scheme}://{server_host}"
             if server_port not in (80, 443):
                 base_url += f":{server_port}"
@@ -1171,31 +1320,53 @@ async def analyze_fire_map(
                 "confidence": confidence,
                 "recommendations": analysis_result.get("recommendations", [])
             },
-            "risk_level": risk_level,  # Moved to top level
-            "confidence": confidence,  # Top level for backward compatibility
-            "fire_count": len(fire_detections),  # Top level for backward compatibility
+            "risk_level": risk_level,
+            "confidence": confidence,
+            "fire_count": len(fire_detections),
             "map_url": map_image_url,
             "map_html": map_html_url,
             "timestamp": timestamp,
-            "last_updated": timestamp,  # For backward compatibility
+            "last_updated": timestamp,
             "metadata": {
                 "location": {"lat": lat, "lng": lng},
                 "radius_km": radius_km,
                 "detection_count": len(fire_detections),
                 "data_source": "NASA FIRMS"
-            },
-            # Add top-level fields for backward compatibility
-            "fire_count": len(fire_detections),
-            "confidence": confidence,
-            "risk_level": risk_level,
-            "last_updated": timestamp
+            }
         }
         
         return response_data
         
     except Exception as e:
-        logger.error(f"Error in analyze_fire_map: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        import traceback
+        error_trace = traceback.format_exc()
+        logger.error(f"Error in analyze_fire_map: {str(e)}\n{error_trace}")
+        
+        # Get the Origin header from the request
+        origin = request.headers.get('Origin', '')
+        
+        # Check if the origin is in our allowed origins
+        allowed_origins = [
+            "https://wildguard-hackathon-2025.web.app",
+            "http://localhost:3000",
+            "http://127.0.0.1:3000"
+        ]
+        
+        # If the origin is in our allowed list, use it, otherwise use a default
+        allowed_origin = origin if origin in allowed_origins else "https://wildguard-hackathon-2025.web.app"
+        
+        response = JSONResponse(
+            status_code=500,
+            content={"detail": str(e), "trace": error_trace},
+            headers={
+                "Access-Control-Allow-Origin": allowed_origin,
+                "Access-Control-Allow-Credentials": "true",
+                "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+                "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With",
+                "Vary": "Origin"
+            }
+        )
+        return response
 
 @app.post("/api/analyze", response_model=WildfireResponse)
 async def analyze_wildfire(
@@ -1511,6 +1682,31 @@ async def text_to_speech(request: dict):
         logger.error(f"TTS error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"TTS error: {str(e)}")
 
+@app.options("/")
+async def options_root():
+    response = JSONResponse(status_code=200, content={"status": "ok"})
+    response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+    response.headers["Access-Control-Allow-Credentials"] = "true"
+    response.headers["Access-Control-Max-Age"] = "600"
+    return response
+
+@app.get("/")
+async def root():
+    """Root endpoint with CORS headers."""
+    return {"message": "WildGuard API is running"}
+
+@app.options("/health")
+@app.options("/api/health")
+async def options_health():
+    response = JSONResponse(status_code=200, content={"status": "ok"})
+    response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+    response.headers["Access-Control-Allow-Credentials"] = "true"
+    response.headers["Access-Control-Max-Age"] = "600"
+    return response
+
+@app.get("/health")
 @app.get("/api/health")
 async def health_check():
     """Health check endpoint."""
@@ -1761,5 +1957,11 @@ async def generate_fire_map(fire_data: List[Dict], lat: float, lng: float, radiu
 
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.getenv("PORT", "8080"))  # Default to 8080 for Cloud Run
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    port = int(os.getenv("PORT", "8080"))  # Default to 8080 to match frontend
+    logger.info(f"Starting server on http://0.0.0.0:{port}")
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=port,
+        log_level="info"
+    )
