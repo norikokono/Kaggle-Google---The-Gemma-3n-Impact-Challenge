@@ -1,77 +1,74 @@
 # WildGuard: AI-Powered Wildfire Detection
 
-![WildGuard Logo](https://via.placeholder.com/800x200/1a5f7a/ffffff?text=WildGuard)
+![WildGuard Logo](https://github.com/norikokono/Kaggle-Google---The-Gemma-3n-Impact-Challenge/blob/main/frontend/public/logo.svg)
 
 ## 🚀 Overview
-WildGuard is an AI solution designed to detect and respond to wildfires in real-time. It processes satellite imagery, weather data, and ground sensor inputs to provide early warnings and critical information to communities at risk.
+WildGuard is an AI-powered wildfire detection system that analyzes NASA FIRMS satellite data to identify and monitor wildfire hotspots in real-time. It provides critical fire detection and analysis to help communities and first responders.
 
 ## 🌟 Key Features
 
-### 🔥 Early Detection
-- **AI-Powered Analysis**: Processes satellite and camera feeds
-- **Multimodal Data**: Combines visual, thermal, and environmental data
-- **Real-time Alerts**: Immediate notifications for potential fire incidents
+### 🔥 Fire Detection
+- **Satellite Data Integration**: Real-time fire detection using NASA FIRMS API
+- **AI-Powered Analysis**: Processes thermal anomaly data from VIIRS and MODIS satellites
+- **Interactive Maps**: Visualize fire detections with detailed location information
 
-### � Connectivity
-- **Online Mode**: Full functionality with internet connection
+### 🌐 Connectivity
+- **RESTful API**: Built with FastAPI for high-performance data processing
+- **CORS Support**: Secure cross-origin requests for web applications
+- **Real-time Updates**: Get the latest fire detection data for any location
 - **Offline Support**: Basic features available without internet (in development)
   - Service worker caches essential assets
   - Offline fallback page available
   - Local data storage for critical information
 
-> **Note**: Advanced AI features require an internet connection. Full offline functionality is currently in development.
+> **Note**: Real-time fire detection requires an internet connection to access NASA FIRMS data.
 
-### 🚨 Emergency Response
-- **Evacuation Planning**: Generates optimized routes based on real-time conditions
-- **Resource Allocation**: Helps first responders identify critical areas
-- **Community Alerts**: Broadcasts warnings to nearby devices
+### 🚨 Emergency Features
+- **Fire Analysis**: Detailed reports on detected wildfires
+- **Risk Assessment**: AI-powered evaluation of fire risk levels
+- **Interactive Maps**: Visual representation of fire detections and heat maps
 
 ## 🛠️ Technical Architecture
 
 ### Backend (Python/FastAPI)
-- **Gemma 3n Integration**: On-device model inference
-- **Data Processing**: Handles satellite, weather, and sensor data
-- **API Endpoints**: RESTful interface for mobile and web clients
-- **Google Earth Engine**: Satellite data processing and analysis
+- **NASA FIRMS API**: Real-time fire detection data from VIIRS and MODIS satellites
+- **FastAPI**: High-performance API for data processing
+- **CORS Support**: Secure cross-origin requests
+- **Geospatial Analysis**: Process and analyze fire detection data
 
 ### Frontend (React/TypeScript)
-- **Progressive Web App**: Works across all devices
-- **Offline Support**: Service workers for offline functionality
-- **Interactive Map**: Real-time visualization of fire risks and incidents
-- **Voice Search**: Hands-free location search with voice commands
+- **Interactive Map**: Visualize fire detections with Leaflet/OpenStreetMap
+- **Responsive Design**: Works on desktop and mobile devices
+- **Voice Commands**: Hands-free control of the application
 
 ## 🚀 Getting Started
 
 ### Prerequisites
 - Python 3.9+
 - Node.js 16+
-- Google Cloud account with Earth Engine API enabled
-- Google Earth Engine service account credentials
+- NASA FIRMS API Key (Get it from https://firms.modaps.eosdis.nasa.gov/api/area/)
 
 ### Installation
 
 #### Backend Setup
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/wildguard.git
-cd wildguard/backend
+git clone https://github.com/norikokono/Kaggle-Google---The-Gemma-3n-Impact-Challenge.git
+
+# Navigate to the backend director
+cd backend
 
 # Create and activate virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
 # Install dependencies
 pip install -r requirements.txt
 
-# Set up Google Earth Engine credentials
-# 1. Go to Google Cloud Console
-# 2. Create a new project or select existing
-# 3. Enable Earth Engine API
-# 4. Create service account and download private key as 'private-key.json'
-
-# Copy environment file and update with your details
+# Set up environment variables
 cp .env.example .env
-# Edit .env with your service account email and key path
+# Edit .env and add your NASA FIRMS API key
+# NASA_FIRMS_API_KEY=your_api_key_here
 ```
 
 #### Frontend Setup
@@ -94,33 +91,20 @@ cd frontend
 npm start
 ```
 
-## 🧪 Testing Offline Mode
-
-1. **Using Chrome DevTools**:
-   - Open DevTools (F12 or Cmd+Option+I)
-   - Go to "Application" tab > "Service Workers"
-   - Check "Offline" checkbox
-   - Refresh the page
-
-2. **System-Level Testing**:
-   - Disconnect from the internet
-   - Reload the application
-   - The app should load from cache and show the offline indicator
-
 ## 🌐 API Documentation
 
-### Assess Wildfire Risk
+### Analyze Fire Map
 
-**POST** `/api/assess_risk`
+**POST** `/analyze-fire-map`
 
-Assess wildfire risk for a specific location.
+Analyze fire data for a specific location.
 
 **Request Body:**
 ```json
 {
-  "latitude": 37.7749,
-  "longitude": -122.4194,
-  "date_range": ["2023-01-01", "2023-12-31"]
+  "lat": 37.7749,
+  "lng": -122.4194,
+  "radius_km": 50
 }
 ```
 
@@ -128,22 +112,35 @@ Assess wildfire risk for a specific location.
 ```json
 {
   "status": "success",
-  "location": {
-    "latitude": 37.7749,
-    "longitude": -122.4194,
-    "date_range": ["2023-01-01", "2023-12-31"]
+  "analysis_id": "abc123",
+  "fire_detections": [
+    {
+      "latitude": 37.775,
+      "longitude": -122.419,
+      "bright_ti4": 320.5,
+      "frp": 18.7,
+      "confidence": "high"
+    }
+  ],
+  "analysis": {
+    "total_fires": 1,
+    "risk_level": "high",
+    "recommendations": ["Monitor area closely", "Alert local authorities"]
   },
-  "risk_score": 65.5,
-  "risk_level": "High",
-  "factors": {
-    "vegetation_dryness": 75.2,
-    "temperature": 68.3,
-    "humidity": 42.1,
-    "precipitation": 35.7,
-    "slope": 12.4
-  }
+  "map_url": "/api/maps/abc123",
+  "map_html": "<div>...</div>",
+  "timestamp": "2025-08-04T01:00:00Z"
 }
 ```
+
+### Get Fire Map
+
+**GET** `/api/maps/{analysis_id}`
+
+Retrieve a previously generated fire map.
+
+**Response:**
+- HTML page with interactive map
 
 ## 🤝 Contributing
 We welcome contributions! Please read our [Contributing Guidelines](CONTRIBUTING.md) for details.
