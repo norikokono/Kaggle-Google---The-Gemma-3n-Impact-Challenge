@@ -1,6 +1,6 @@
 # WildGuard: AI-Powered Wildfire Detection
 
-![WildGuard Logo](https://github.com/norikokono/Kaggle-Google---The-Gemma-3n-Impact-Challenge/blob/main/frontend/public/logo.svg)
+🔗 [View Live Demo](https://wildguard-hackathon-2025.web.app/)
 
 ## 🚀 Overview
 WildGuard is an AI-powered wildfire detection system that analyzes NASA FIRMS satellite data to identify and monitor wildfire hotspots in real-time. It provides critical fire detection and analysis to help communities and first responders.
@@ -46,7 +46,7 @@ WildGuard is an AI-powered wildfire detection system that analyzes NASA FIRMS sa
 ### Prerequisites
 - Python 3.9+
 - Node.js 16+
-- NASA FIRMS API Key (Get it from https://firms.modaps.eosdis.nasa.gov/api/area/)
+- [NASA FIRMS API Key](https://firms.modaps.eosdis.nasa.gov/api/area/) - Required for real-time fire data
 
 ### Installation
 
@@ -140,6 +140,7 @@ Analyze fire data for a specific location.
 Retrieve a previously generated fire map.
 
 **Response:**
+
 - HTML page with interactive map
 
 ## 🤝 Contributing
