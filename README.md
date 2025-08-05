@@ -143,8 +143,12 @@ Retrieve a previously generated fire map.
 
 - HTML page with interactive map
 
-## 🤝 Contributing
-We welcome contributions! Please read our [Contributing Guidelines](CONTRIBUTING.md) for details.
-
 ## 📄 License
 This project is licensed under the Apache 2.0 License - see the [LICENSE](LICENSE) file for details.
+
+## 🔥 Wildfire Monitoring with Gemma 3n
+
+This implementation showcases a practical application of **Gemma 3n** in environmental monitoring and emergency response.
+
+> ⚠️ **Disclaimer:** This app was developed as a prototype for a hackathon.  
+> For accurate and up-to-date wildfire information, please refer to official and established resources.

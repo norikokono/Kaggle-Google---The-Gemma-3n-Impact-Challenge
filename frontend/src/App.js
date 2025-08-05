@@ -441,7 +441,9 @@ function App() {
           <h2>Wildfire Detection & Crisis Response Across North America</h2>
           <p className="tagline">AI-Powered Early Warning System</p>
           <p className="disclaimer">
-            This is a submission for the Google Gemma 3n Impact Challenge on Kaggle Competition. Our mission is to combat the growing threat of wildfires through advanced AI technology, providing timely detection and response solutions to protect communities and ecosystems.
+            This is a submission for the Google Gemma 3n Impact Challenge on Kaggle. Our mission is to combat the growing threat of wildfires through advanced AI technology, providing timely detection and response solutions to protect communities and ecosystems. <span className="disclaimer-note">
+              Disclaimer: This is a hackathon prototype. For critical wildfire information, please refer to official emergency services and government agencies.
+            </span>
           </p>
         </div>
       </header>
